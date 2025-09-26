@@ -664,10 +664,21 @@ func (tb *TelegramBot) handleSettings(chatID int64, userID int64) {
                 keyPreview,
                 map[bool]string{true: "🟢 Aktif", false: "🔴 Pasif"}[user.IsActive])
 
+        log.Printf("📤 Creating settings message for chat %d", chatID)
         msg := tgbotapi.NewMessage(chatID, settingsMsg)
         msg.ParseMode = "Markdown"
         msg.ReplyMarkup = tb.createMainMenu()
-        tb.bot.Send(msg)
+        
+        log.Printf("📤 Sending settings message...")
+        response, err := tb.bot.Send(msg)
+        if err != nil {
+                log.Printf("❌ Failed to send settings message: %v", err)
+                // Try simpler message
+                simpleMsg := tgbotapi.NewMessage(chatID, "⚙️ Settings error. Bot çalışıyor ama mesaj gönderemedi.")
+                tb.bot.Send(simpleMsg)
+        } else {
+                log.Printf("✅ Settings message sent successfully! Message ID: %d", response.MessageID)
+        }
 }
 
 // Handle /close command
