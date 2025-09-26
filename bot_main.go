@@ -488,7 +488,10 @@ func (tb *TelegramBot) executeAutoTrade(user *UserData, symbol string) {
         }
 
         log.Printf("✅ Auto-trade SUCCESS for user %d on %s", user.UserID, tradingSymbol)
-        tb.sendMessage(user.UserID, fmt.Sprintf("✅ Auto-trade SUCCESS for %s!\n\n%s", tradingSymbol, result))
+        
+        // Send success notification with close position button
+        resultText := fmt.Sprintf("Pozisyon başarıyla açıldı! OrderId: %s", result.OrderID)
+        tb.sendPositionNotification(user.UserID, tradingSymbol, resultText)
 }
 
 // Send message to user (helper method)
@@ -498,6 +501,24 @@ func (tb *TelegramBot) sendMessage(chatID int64, text string) {
         if err != nil {
                 log.Printf("Failed to send message to %d: %v", chatID, err)
         }
+}
+
+// Create main menu keyboard
+func (tb *TelegramBot) createMainMenu() tgbotapi.InlineKeyboardMarkup {
+        return tgbotapi.NewInlineKeyboardMarkup(
+                tgbotapi.NewInlineKeyboardRow(
+                        tgbotapi.NewInlineKeyboardButtonData("📊 Bakiye", "balance"),
+                        tgbotapi.NewInlineKeyboardButtonData("⚙️ Ayarlar", "settings"),
+                ),
+                tgbotapi.NewInlineKeyboardRow(
+                        tgbotapi.NewInlineKeyboardButtonData("🔧 Setup", "setup"),
+                        tgbotapi.NewInlineKeyboardButtonData("❌ Pozisyonları Kapat", "close_all"),
+                ),
+                tgbotapi.NewInlineKeyboardRow(
+                        tgbotapi.NewInlineKeyboardButtonData("📈 Pozisyonlar", "positions"),
+                        tgbotapi.NewInlineKeyboardButtonData("❓ Yardım", "help"),
+                ),
+        )
 }
 
 // Handle /start command
@@ -514,26 +535,22 @@ func (tb *TelegramBot) handleStart(chatID int64, userID int64, username string) 
                 tb.saveUser(user)
         }
 
-        welcomeMsg := `🚀 **Upbit-Bitget Auto Trading Bot**
+        welcomeMsg := fmt.Sprintf(`👋 **Hoşgeldin @%s!**
 
-Bu bot Upbit'te yeni listelenen coinleri otomatik olarak Bitget'te long position ile alır.
+🚀 **Upbit-Bitget Otomatik Trading Botu**
 
-**Başlangıç Adımları:**
-1. /setup - Bitget API bilgilerinizi ve ayarlarınızı girin
-2. Bot otomatik olarak yeni Upbit coinlerini izleyecek
-3. /close - İstediğinizde pozisyonlarınızı kapatın
+Bu bot, Upbit'te listelenen yeni coinleri otomatik olarak Bitget'te long position ile alır.
 
-**Komutlar:**
-• /setup - API bilgilerini ve ayarları gir
-• /settings - Mevcut ayarları görüntüle
-• /status - Bot durumunu kontrol et  
-• /close - Tüm pozisyonları kapat
-• /help - Yardım menüsü
+**Nasıl Çalışır:**
+1. Upbit'te yeni coin listesi açıklandığında
+2. Bot otomatik olarak Bitget'te long position açar
+3. Senin belirlediğin miktar ve leverage ile işlem yapar
 
-⚠️ **Uyarı:** Bu bot gerçek parayla işlem yapar. Ayarlarınızı dikkatli yapın!`
+**Ana Menü:** Aşağıdaki butonlardan istediğin işlemi seç:`, username)
 
         msg := tgbotapi.NewMessage(chatID, welcomeMsg)
         msg.ParseMode = "Markdown"
+        msg.ReplyMarkup = tb.createMainMenu()
         tb.bot.Send(msg)
 }
 
@@ -826,8 +843,223 @@ func (tb *TelegramBot) Start() {
         updates := tb.bot.GetUpdatesChan(updateConfig)
 
         for update := range updates {
-                tb.handleMessage(update)
+                if update.Message != nil {
+                        tb.handleMessage(update)
+                } else if update.CallbackQuery != nil {
+                        tb.handleCallbackQuery(update.CallbackQuery)
+                }
         }
+}
+
+// Handle callback queries from inline keyboards
+func (tb *TelegramBot) handleCallbackQuery(callback *tgbotapi.CallbackQuery) {
+        // Answer the callback query to remove loading state
+        callbackConfig := tgbotapi.NewCallback(callback.ID, "")
+        tb.bot.Request(callbackConfig)
+
+        chatID := callback.Message.Chat.ID
+        userID := callback.From.ID
+        data := callback.Data
+
+        switch data {
+        case "balance":
+                tb.handleBalanceQuery(chatID, userID)
+        case "settings":
+                tb.handleSettings(chatID, userID)
+        case "setup":
+                tb.handleSetup(chatID, userID, callback.From.UserName)
+        case "close_all":
+                tb.handleClose(chatID, userID)
+        case "positions":
+                tb.handlePositionsQuery(chatID, userID)
+        case "help":
+                tb.handleHelpQuery(chatID)
+        case "main_menu":
+                tb.handleStart(chatID, userID, callback.From.UserName)
+        default:
+                if strings.HasPrefix(data, "close_position_") {
+                        symbol := strings.TrimPrefix(data, "close_position_")
+                        tb.handleCloseSpecificPosition(chatID, userID, symbol)
+                }
+        }
+}
+
+// Handle balance query
+func (tb *TelegramBot) handleBalanceQuery(chatID int64, userID int64) {
+        user, exists := tb.getUser(userID)
+        if !exists || user.BitgetAPIKey == "" {
+                tb.sendMessage(chatID, "❌ Henüz API ayarlarınızı yapmadınız. 🔧 Setup butonuna tıklayın.")
+                return
+        }
+
+        if !user.IsActive {
+                tb.sendMessage(chatID, "❌ Setup'ınız tamamlanmamış. 🔧 Setup butonuna tıklayın.")
+                return
+        }
+
+        tb.sendMessage(chatID, "💰 Bakiye bilgileri alınıyor...")
+
+        // Get balance using Bitget API
+        api := NewBitgetAPI(user.BitgetAPIKey, user.BitgetSecret, user.BitgetPasskey)
+        balances, err := api.GetAccountBalance()
+        if err != nil {
+                tb.sendMessage(chatID, fmt.Sprintf("❌ Bakiye alınamadı: %v", err))
+                return
+        }
+
+        balanceText := "📊 **Bakiye Bilgileri:**\n\n"
+        if len(balances) == 0 {
+                balanceText += "✅ Henüz bakiye bilgisi yok"
+        } else {
+                for _, balance := range balances {
+                        balanceText += fmt.Sprintf("💰 **%s**: %.4f USDT\n", balance.MarginCoin, balance.Available)
+                }
+        }
+
+        balanceMsg := fmt.Sprintf(`💰 **Futures Bakiye**
+
+%s
+
+🔄 **Ana Menü için /start yazın**`, balanceText)
+
+        msg := tgbotapi.NewMessage(chatID, balanceMsg)
+        msg.ParseMode = "Markdown"
+        msg.ReplyMarkup = tb.createMainMenu()
+        tb.bot.Send(msg)
+}
+
+// Handle positions query
+func (tb *TelegramBot) handlePositionsQuery(chatID int64, userID int64) {
+        user, exists := tb.getUser(userID)
+        if !exists || user.BitgetAPIKey == "" {
+                tb.sendMessage(chatID, "❌ Henüz API ayarlarınızı yapmadınız. 🔧 Setup butonuna tıklayın.")
+                return
+        }
+
+        if !user.IsActive {
+                tb.sendMessage(chatID, "❌ Setup'ınız tamamlanmamış. 🔧 Setup butonuna tıklayın.")
+                return
+        }
+
+        tb.sendMessage(chatID, "📈 Pozisyon bilgileri alınıyor...")
+
+        // Get positions using Bitget API
+        api := NewBitgetAPI(user.BitgetAPIKey, user.BitgetSecret, user.BitgetPasskey)
+        positions, err := api.GetAllPositions()
+        if err != nil {
+                tb.sendMessage(chatID, fmt.Sprintf("❌ Pozisyonlar alınamadı: %v", err))
+                return
+        }
+
+        if len(positions) == 0 {
+                msg := tgbotapi.NewMessage(chatID, "📈 **Pozisyonlar**\n\n✅ Şu anda açık pozisyon bulunmuyor.")
+                msg.ParseMode = "Markdown"
+                msg.ReplyMarkup = tb.createMainMenu()
+                tb.bot.Send(msg)
+                return
+        }
+
+        positionsText := "📊 **Açık Pozisyonlar:**\n\n"
+        for _, pos := range positions {
+                if pos.Size != "0" {
+                        positionsText += fmt.Sprintf("💹 **%s** - Size: %s - PnL: %s\n", pos.Symbol, pos.Size, pos.UnrealizedPL)
+                }
+        }
+        
+        if positionsText == "📊 **Açık Pozisyonlar:**\n\n" {
+                positionsText = "✅ Şu anda açık pozisyon bulunmuyor."
+        }
+
+        positionsMsg := fmt.Sprintf(`📈 **Açık Pozisyonlar**
+
+%s
+
+🔄 **Ana Menü için /start yazın**`, positionsText)
+
+        msg := tgbotapi.NewMessage(chatID, positionsMsg)
+        msg.ParseMode = "Markdown"
+        msg.ReplyMarkup = tb.createMainMenu()
+        tb.bot.Send(msg)
+}
+
+// Handle help query
+func (tb *TelegramBot) handleHelpQuery(chatID int64) {
+        helpMsg := `❓ **Yardım & Rehber**
+
+🚀 **Bot Nasıl Çalışır:**
+• Upbit'te yeni coin listelendiğinde otomatik tespit eder
+• Sizin ayarlarınızla Bitget'te long position açar
+• İşlem sonucunu size bildirir
+• İstediğinizde pozisyonları kapatabilirsiniz
+
+🔧 **Setup Süreci:**
+1. 📊 Bakiye - Futures bakiyenizi görüntüleyin
+2. ⚙️ Ayarlar - Mevcut ayarlarınızı kontrol edin
+3. 🔧 Setup - API bilgilerinizi girin
+4. ❌ Pozisyonları Kapat - Tüm pozisyonları kapatın
+
+⚠️ **Önemli Uyarılar:**
+• Bu bot gerçek parayla işlem yapar
+• Sadece kaybetmeyi göze alabileceğiniz miktarla kullanın
+• API bilgileriniz güvenli şekilde şifrelenir
+• Leverage kullanımına dikkat edin
+
+📞 **Destek:** @oxmtnslk ile iletişime geçin`
+
+        msg := tgbotapi.NewMessage(chatID, helpMsg)
+        msg.ParseMode = "Markdown"
+        msg.ReplyMarkup = tb.createMainMenu()
+        tb.bot.Send(msg)
+}
+
+// Handle closing specific position
+func (tb *TelegramBot) handleCloseSpecificPosition(chatID int64, userID int64, symbol string) {
+        user, exists := tb.getUser(userID)
+        if !exists || user.BitgetAPIKey == "" {
+                tb.sendMessage(chatID, "❌ API ayarlarınızı yapmadınız.")
+                return
+        }
+
+        tb.sendMessage(chatID, fmt.Sprintf("🚨 %s pozisyonu kapatılıyor...", symbol))
+
+        api := NewBitgetAPI(user.BitgetAPIKey, user.BitgetSecret, user.BitgetPasskey)
+        result, err := api.FlashClosePosition(symbol, "long")
+        if err != nil {
+                tb.sendMessage(chatID, fmt.Sprintf("❌ %s pozisyonu kapatılamadı: %v", symbol, err))
+                return
+        }
+
+        tb.sendMessage(chatID, fmt.Sprintf("✅ %s pozisyonu başarıyla kapatıldı!\n\nPozisyon ID: %s", symbol, result.OrderID))
+}
+
+// Send position notification with close button
+func (tb *TelegramBot) sendPositionNotification(chatID int64, symbol string, result string) {
+        notificationMsg := fmt.Sprintf(`🎉 **Pozisyon Açıldı!**
+
+💹 **Sembol:** %s
+📊 **Sonuç:** 
+%s
+
+**Pozisyonunuzu istediğiniz zaman kapatabilirsiniz:**`, symbol, result)
+
+        // Create close position button
+        closeButton := tgbotapi.NewInlineKeyboardMarkup(
+                tgbotapi.NewInlineKeyboardRow(
+                        tgbotapi.NewInlineKeyboardButtonData(fmt.Sprintf("❌ %s Pozisyonunu Kapat", symbol), fmt.Sprintf("close_position_%s", symbol)),
+                ),
+                tgbotapi.NewInlineKeyboardRow(
+                        tgbotapi.NewInlineKeyboardButtonData("📊 Bakiye", "balance"),
+                        tgbotapi.NewInlineKeyboardButtonData("📈 Tüm Pozisyonlar", "positions"),
+                ),
+                tgbotapi.NewInlineKeyboardRow(
+                        tgbotapi.NewInlineKeyboardButtonData("🏠 Ana Menü", "main_menu"),
+                ),
+        )
+
+        msg := tgbotapi.NewMessage(chatID, notificationMsg)
+        msg.ParseMode = "Markdown"
+        msg.ReplyMarkup = closeButton
+        tb.bot.Send(msg)
 }
 
 // StartTradingBot starts the trading bot (to be called from main.go)
@@ -846,7 +1078,7 @@ func StartTradingBot() {
         bot.Start()
 }
 
-// Main entry point
+// Main entry point  
 func main() {
         StartTradingBot()
 }
