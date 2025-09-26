@@ -753,6 +753,16 @@ func (tb *TelegramBot) closeUserPositions(chatID int64, user *UserData) {
                 return
         }
 
+        // Clear all positions from tracking (thread-safe)
+        positionsMutex.Lock()
+        for positionKey := range activePositions {
+                if strings.HasPrefix(positionKey, fmt.Sprintf("%d_", chatID)) {
+                        delete(activePositions, positionKey)
+                        log.Printf("🗑️ Removed position %s from tracking", positionKey)
+                }
+        }
+        positionsMutex.Unlock()
+
         successMsg := fmt.Sprintf(`✅ **Pozisyonlar Başarıyla Kapatıldı**
 
 📋 **Order ID:** %s
@@ -1129,6 +1139,15 @@ func (tb *TelegramBot) handleCloseSpecificPosition(chatID int64, userID int64, s
                 tb.sendMessage(chatID, fmt.Sprintf("❌ %s pozisyonu kapatılamadı: %v", symbol, err))
                 return
         }
+
+        // Remove specific position from tracking (thread-safe)
+        positionKey := fmt.Sprintf("%d_%s", chatID, symbol)
+        positionsMutex.Lock()
+        if _, exists := activePositions[positionKey]; exists {
+                delete(activePositions, positionKey)
+                log.Printf("🗑️ Removed position %s from tracking", positionKey)
+        }
+        positionsMutex.Unlock()
 
         tb.sendMessage(chatID, fmt.Sprintf("✅ %s pozisyonu başarıyla kapatıldı!\n\nPozisyon ID: %s", symbol, result.OrderID))
 }
