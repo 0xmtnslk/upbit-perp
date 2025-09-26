@@ -1,4 +1,4 @@
-modules = ["python-3.11"]
+modules = ["python-3.11", "go-1.24"]
 [agent]
 expertMode = true
 
@@ -7,24 +7,3 @@ channel = "stable-25_05"
 packages = ["openssl"]
 
 [workflows]
-runButton = "Project"
-
-[[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Telegram Monitor"
-
-[[workflows.workflow]]
-name = "Telegram Monitor"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python telegram_monitor.py"
-
-[workflows.workflow.metadata]
-outputType = "console"
