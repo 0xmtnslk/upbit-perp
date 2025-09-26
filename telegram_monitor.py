@@ -9,7 +9,6 @@ import json
 import re
 import logging
 import time
-import schedule
 from datetime import datetime
 from telethon import TelegramClient, events
 from telethon.errors import SessionPasswordNeededError, FloodWaitError
@@ -28,20 +27,31 @@ logger = logging.getLogger(__name__)
 
 class TelegramUpbitMonitor:
     def __init__(self):
-        self.api_id = os.getenv('TELEGRAM_API_ID')
-        self.api_hash = os.getenv('TELEGRAM_API_HASH')
+        api_id_env = os.getenv('TELEGRAM_API_ID')
+        api_hash_env = os.getenv('TELEGRAM_API_HASH')
         self.channel_username = 'AstronomicaNews'
         self.json_file = 'upbit_new.json'
         self.detected_symbols = set()
         self.session_name = 'telegram_monitor_session'
         
-        if not self.api_id or not self.api_hash:
+        if not api_id_env or not api_hash_env:
             raise ValueError("TELEGRAM_API_ID and TELEGRAM_API_HASH environment variables must be set")
         
+        # Auto-detect which value is the API ID (numeric) and which is the hash (string)
         try:
-            self.api_id = int(self.api_id)
+            # Try converting api_id_env to int
+            self.api_id = int(api_id_env)
+            self.api_hash = api_hash_env
         except ValueError:
-            raise ValueError("TELEGRAM_API_ID must be a valid integer")
+            try:
+                # If that fails, try the other way around
+                self.api_id = int(api_hash_env)
+                self.api_hash = api_id_env
+            except ValueError:
+                raise ValueError("Neither TELEGRAM_API_ID nor TELEGRAM_API_HASH contains a valid integer")
+        
+        logger.info(f"Using API ID: {self.api_id}")
+        logger.info(f"Using API Hash: {self.api_hash[:8]}...")  # Only show first 8 chars for security
         
         self.client = TelegramClient(self.session_name, self.api_id, self.api_hash)
         
@@ -116,12 +126,13 @@ class TelegramUpbitMonitor:
         try:
             await self.client.start()
             me = await self.client.get_me()
-            logger.info(f"Successfully authenticated as: {me.first_name}")
+            logger.info(f"Successfully authenticated as: {me.first_name or me.username or 'Unknown'}")
             
             # Try to get channel entity to verify access
             try:
                 entity = await self.client.get_entity(f"@{self.channel_username}")
-                logger.info(f"Successfully connected to channel: {entity.title} (@{self.channel_username})")
+                channel_name = getattr(entity, 'title', getattr(entity, 'username', 'Unknown'))
+                logger.info(f"Successfully connected to channel: {channel_name} (@{self.channel_username})")
             except Exception as e:
                 logger.error(f"Could not access channel @{self.channel_username}: {e}")
                 raise
@@ -139,10 +150,11 @@ class TelegramUpbitMonitor:
             messages = await self.client.get_messages(entity, limit=50)
             
             processed_count = 0
-            for message in messages:
-                if message.text:
-                    await self.process_message(message)
-                    processed_count += 1
+            if messages:
+                for message in messages:
+                    if message and message.text:
+                        await self.process_message(message)
+                        processed_count += 1
             
             logger.info(f"Processed {processed_count} recent messages from @{self.channel_username}")
                 
@@ -182,12 +194,6 @@ class TelegramUpbitMonitor:
             await self.start_client()
         await self.check_recent_messages()
 
-    def run_monitor_cycle(self):
-        """Run a single monitoring cycle (sync wrapper for async function)"""
-        try:
-            asyncio.run(self.monitor_once())
-        except Exception as e:
-            logger.error(f"Error in monitoring cycle: {e}")
 
     async def setup_real_time_monitoring(self):
         """Setup real-time event handler for new messages"""
@@ -218,13 +224,22 @@ async def main_async():
         
         logger.info("Starting continuous monitoring with real-time updates and periodic checks...")
         
-        # Schedule periodic checks every minute (in addition to real-time monitoring)
-        schedule.every(1).minutes.do(monitor.run_monitor_cycle)
+        # Set up periodic message checking (every 60 seconds)
+        last_check_time = time.time()
+        check_interval = 60  # 60 seconds
         
         # Keep the client running
         while True:
-            # Run scheduled tasks
-            schedule.run_pending()
+            current_time = time.time()
+            
+            # Periodic message check
+            if current_time - last_check_time >= check_interval:
+                try:
+                    logger.info("Running periodic message check...")
+                    await monitor.check_recent_messages()
+                    last_check_time = current_time
+                except Exception as e:
+                    logger.error(f"Error in periodic check: {e}")
             
             # Keep client alive
             if not monitor.client.is_connected():
@@ -241,11 +256,11 @@ async def main_async():
             
     except KeyboardInterrupt:
         logger.info("Monitor stopped by user")
-        if 'monitor' in locals():
+        if 'monitor' in locals() and monitor.client:
             await monitor.client.disconnect()
     except Exception as e:
         logger.error(f"Fatal error: {e}")
-        if 'monitor' in locals():
+        if 'monitor' in locals() and monitor.client:
             await monitor.client.disconnect()
         raise
 

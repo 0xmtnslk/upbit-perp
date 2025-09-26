@@ -1,0 +1,19 @@
+{
+  "listings": [
+    {
+      "symbol": "MIRA",
+      "timestamp": "2025-09-26T13:21:25.760886",
+      "detected_at": "2025-09-26 13:21:25 UTC"
+    },
+    {
+      "symbol": "XPL",
+      "timestamp": "2025-09-26T13:21:25.767338",
+      "detected_at": "2025-09-26 13:21:25 UTC"
+    },
+    {
+      "symbol": "FLUID",
+      "timestamp": "2025-09-26T13:21:25.768844",
+      "detected_at": "2025-09-26 13:21:25 UTC"
+    }
+  ]
+}
