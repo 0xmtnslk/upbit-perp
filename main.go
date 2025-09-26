@@ -326,36 +326,53 @@ func (m *TelegramUpbitMonitor) Start() error {
                                 return fmt.Errorf("failed to read phone number: %v", err)
                         }
 
-                        // Start authentication
-                        if err := m.client.Auth().IfNecessary(ctx, auth.NewFlow(
+                        // First try without password
+                        log.Printf("📱 Attempting authentication with phone and code...")
+                        err = m.client.Auth().IfNecessary(ctx, auth.NewFlow(
                                 auth.Constant(
                                         phone, 
-                                        "", // No hardcoded password, will be prompted if needed
+                                        "",
                                         auth.CodeAuthenticatorFunc(func(ctx context.Context, sentCode *tg.AuthSentCode) (string, error) {
                                                 return m.readCode()
                                         }),
                                 ),
                                 auth.SendCodeOptions{},
-                        )); err != nil {
+                        ))
+
+                        if err != nil {
+                                log.Printf("⚠️  Basic auth failed: %v", err)
+                                
                                 // Check if 2FA password is required
-                                if strings.Contains(err.Error(), "SESSION_PASSWORD_NEEDED") {
+                                if strings.Contains(err.Error(), "SESSION_PASSWORD_NEEDED") || strings.Contains(err.Error(), "password") {
+                                        log.Printf("🔐 2FA password required...")
                                         password, passErr := m.readPassword()
                                         if passErr != nil {
                                                 return fmt.Errorf("failed to read password: %v", passErr)
                                         }
                                         
+                                        // If password is empty, try once more
+                                        if password == "" {
+                                                log.Printf("⚠️  No password provided, trying again...")
+                                                password, passErr = m.readPassword()
+                                                if passErr != nil {
+                                                        return fmt.Errorf("failed to read password: %v", passErr)
+                                                }
+                                        }
+                                        
                                         // Try with password
+                                        log.Printf("🔐 Attempting authentication with password...")
                                         if err := m.client.Auth().IfNecessary(ctx, auth.NewFlow(
                                                 auth.Constant(
                                                         phone, 
                                                         password,
                                                         auth.CodeAuthenticatorFunc(func(ctx context.Context, sentCode *tg.AuthSentCode) (string, error) {
+                                                                // If code is needed again, request it
                                                                 return m.readCode()
                                                         }),
                                                 ),
                                                 auth.SendCodeOptions{},
                                         )); err != nil {
-                                                return fmt.Errorf("authentication failed: %v", err)
+                                                return fmt.Errorf("authentication with password failed: %v", err)
                                         }
                                 } else {
                                         return fmt.Errorf("authentication failed: %v", err)
