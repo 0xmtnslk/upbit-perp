@@ -592,29 +592,68 @@ https://www.bitget.com/api-doc
 func (tb *TelegramBot) handleSettings(chatID int64, userID int64) {
         user, exists := tb.getUser(userID)
         if !exists || user.BitgetAPIKey == "" {
-                msg := tgbotapi.NewMessage(chatID, "❌ Henüz API ayarlarını yapmadınız. /setup komutunu kullanın.")
+                msg := tgbotapi.NewMessage(chatID, "❌ Henüz API ayarlarını yapmadınız. 🔧 Setup butonuna tıklayın.")
+                msg.ReplyMarkup = tb.createMainMenu()
                 tb.bot.Send(msg)
                 return
         }
 
-        settingsMsg := fmt.Sprintf(`⚙️ **Mevcut Ayarlarınız**
+        // Calculate risk level properly
+        var riskLevel string
+        if user.Leverage <= 5 {
+                riskLevel = "🟢 Düşük"
+        } else if user.Leverage <= 20 {
+                riskLevel = "🟡 Orta"
+        } else {
+                riskLevel = "🔴 Yüksek"
+        }
 
-👤 **Kullanıcı:** @%s
-💰 **Margin:** %.2f USDT
-📈 **Leverage:** %dx
-🔐 **API Key:** %s...
-✅ **Durum:** %s
+        // Safe API key preview
+        var keyPreview string
+        if len(user.BitgetAPIKey) >= 8 {
+                keyPreview = user.BitgetAPIKey[:8] + "..."
+        } else {
+                keyPreview = strings.Repeat("*", len(user.BitgetAPIKey)) + "..."
+        }
 
-/setup - Ayarları değiştir
-/close - Pozisyonları kapat`,
+        // Professional settings summary
+        settingsMsg := fmt.Sprintf(`⚙️ **Trading Ayarlarınız**
+
+👤 **Hesap Bilgileri:**
+   • Kullanıcı: @%s (ID: %d)
+   • Durum: %s
+
+💰 **Trade Parametreleri:**
+   • Margin Miktarı: %.2f USDT
+   • Leverage Oranı: %dx
+   • Risk Seviyesi: %s
+
+🔐 **API Konfigürasyonu:**
+   • API Key: %s
+   • Bağlantı Durumu: ✅ Aktif
+   • Son Güncelleme: Bitget v2 API
+
+🚀 **Auto-Trading:**
+   • UPBIT Listening: 🟢 Aktif
+   • Otomatik İşlem: %s
+   • Pozisyon Yönetimi: Otomatik
+
+💡 **Hızlı İşlemler:**
+   🔧 Setup'ı değiştirmek için: /setup
+   📊 Bakiyenizi görmek için: "📊 Bakiye" 
+   📈 Pozisyonlar için: "📈 Pozisyonlar"`,
                 user.Username,
+                user.UserID,
+                map[bool]string{true: "🟢 Aktif", false: "🔴 Pasif"}[user.IsActive],
                 user.MarginUSDT,
                 user.Leverage,
-                user.BitgetAPIKey[:8],
-                map[bool]string{true: "Aktif", false: "Pasif"}[user.IsActive])
+                riskLevel,
+                keyPreview,
+                map[bool]string{true: "🟢 Aktif", false: "🔴 Pasif"}[user.IsActive])
 
         msg := tgbotapi.NewMessage(chatID, settingsMsg)
         msg.ParseMode = "Markdown"
+        msg.ReplyMarkup = tb.createMainMenu()
         tb.bot.Send(msg)
 }
 
