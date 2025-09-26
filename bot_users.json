@@ -1,0 +1,17 @@
+{
+  "users": {
+    "625972998": {
+      "user_id": 625972998,
+      "username": "oxmtnslk",
+      "bitget_api_key": "lZja+huM8h3xt0TeEOe6JBrZVlTwqRi6TZRfRF0UzjevVILPDta2sIg8SsoFdplYSJJeosQ1JTeoQeQ7RMOqRA==",
+      "bitget_secret": "jjWmDYIZkLRPvaddLEatTe7FUkgbRu0zXlJ71bdLzRDMV6G21vmew6iiVRrBJOOKN9OhvvrgeFGubjjOr9D4i79EOpl6+3ll21LKo8UWVV8BgoizCy8i8b4bXHuo",
+      "bitget_passkey": "ETkIa9OE7YpAtXas4hsbjrhlZAmvc7zx5FCYpMsX0j4fAmCOwYJHQwU=",
+      "margin_usdt": 50,
+      "leverage": 0,
+      "is_active": false,
+      "current_state": "awaiting_leverage",
+      "created_at": "2025-09-26T19:55:54Z",
+      "updated_at": "2025-09-26T19:56:54Z"
+    }
+  }
+}
