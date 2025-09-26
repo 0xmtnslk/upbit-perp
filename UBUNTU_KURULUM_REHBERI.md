@@ -2,6 +2,14 @@
 
 Bu rehber, Upbit-Bitget otomatik trading botunu Ubuntu 22.04 sunucusuna kurmanız için gereken tüm adımları içerir.
 
+## 🎯 GitHub Repository Avantajları
+
+✅ **Kolay Kurulum:** `git clone` ile tek komutta tüm dosyalar indirilir  
+✅ **Otomatik Güncellemeler:** `git pull` ile en son özellikleri alabilirsin  
+✅ **Version Control:** Kod değişiklikleri takip edilir  
+✅ **Backup Güvenliği:** Kodlar GitHub'da güvenli şekilde saklanır  
+✅ **Paylaşım:** Repository link'ini paylaşarak başkalarının da kullanmasını sağlayabilirsin
+
 ## 📋 İçindekiler
 1. [Sistem Gereksinimleri](#sistem-gereksinimleri)
 2. [Telegram API Kurulumu](#telegram-api-kurulumu) 
@@ -79,38 +87,43 @@ Bu rehber, Upbit-Bitget otomatik trading botunu Ubuntu 22.04 sunucusuna kurmanı
 
 ---
 
-## 📁 Dosya Yapısını Hazırlama
+## 📁 Projeyi GitHub'dan İndirme
 
-### 1. Proje Klasörü Oluşturma
+### 1. Git Kurulumu
 
 ```bash
-# Ana dizin oluştur
-sudo mkdir -p /opt/upbit-trading-bot
-cd /opt/upbit-trading-bot
-
-# Yetkileri ayarla
-sudo chown -R $USER:$USER /opt/upbit-trading-bot
+# Git'i yükle (eğer yüklü değilse)
+sudo apt install git -y
 ```
 
-### 2. Gerekli Dosyaları Kopyalama
-
-Replit'teki dosyaları sunucuya kopyala:
+### 2. Projeyi Klonlama
 
 ```bash
-# Ana Go dosyaları
-scp main.go user@server:/opt/upbit-trading-bot/
-scp bot_main.go user@server:/opt/upbit-trading-bot/
-scp bitget.go user@server:/opt/upbit-trading-bot/
-scp go.mod user@server:/opt/upbit-trading-bot/
-scp go.sum user@server:/opt/upbit-trading-bot/
+# GitHub'dan projeyi indir
+git clone https://github.com/0xmtnslk/upbit-perp.git
 
-# Veri dosyaları (boş olarak oluştur)
-touch upbit_new.json
-touch active_positions.json
-touch bot_users.json
+# Proje dizinine gir
+cd upbit-perp
 
-# Oturum klasörü
-mkdir -p sessions
+# Yetkileri ayarla
+sudo chown -R $USER:$USER .
+```
+
+### 3. Dosya Yapısını Kontrol Etme
+
+```bash
+# Dosyaların doğru indiğini kontrol et
+ls -la
+
+# Şu dosyaları görmelisin:
+# main.go (Telegram monitor)
+# bot_main.go (Telegram bot)
+# bitget.go (Bitget API)
+# go.mod, go.sum (Go dependencies)
+# active_positions.json
+# upbit_new.json
+# bot_users.json
+# sessions/ (klasör)
 ```
 
 ---
@@ -149,7 +162,7 @@ pip3 install python-telegram-bot requests schedule telegram telethon
 ### 4. Go Modül Bağımlılıkları
 
 ```bash
-cd /opt/upbit-trading-bot
+cd upbit-perp
 go mod tidy
 go mod download
 ```
@@ -161,7 +174,7 @@ go mod download
 ### 1. Environment Dosyası Oluşturma
 
 ```bash
-nano /opt/upbit-trading-bot/.env
+nano .env
 ```
 
 ### 2. Gerekli Değişkenleri Ekleme
@@ -192,7 +205,7 @@ openssl rand -base64 32
 ### 4. Environment Yükleme Script'i
 
 ```bash
-nano /opt/upbit-trading-bot/load_env.sh
+nano load_env.sh
 ```
 
 ```bash
@@ -201,7 +214,7 @@ export $(cat .env | grep -v '#' | sed 's/\r$//' | awk '/=/ {print $1}' )
 ```
 
 ```bash
-chmod +x /opt/upbit-trading-bot/load_env.sh
+chmod +x load_env.sh
 ```
 
 ---
@@ -210,25 +223,32 @@ chmod +x /opt/upbit-trading-bot/load_env.sh
 
 ### 1. İlk JSON Dosyaları Hazırlama
 
+JSON dosyaları GitHub'dan geldi, ancak boş olabilir. İçeriklerini kontrol et:
+
 ```bash
-# upbit_new.json
-cat > /opt/upbit-trading-bot/upbit_new.json << 'EOF'
-{
-  "listings": []
-}
-EOF
+# upbit_new.json içeriğini kontrol et
+cat upbit_new.json
 
-# active_positions.json  
-echo '{}' > /opt/upbit-trading-bot/active_positions.json
+# Eğer boşsa, başlangıç formatını ayarla:
+echo '{"listings": []}' > upbit_new.json
 
-# bot_users.json
-echo '{"Users":{}}' > /opt/upbit-trading-bot/bot_users.json
+# active_positions.json kontrol et
+cat active_positions.json
+
+# Eğer boşsa, başlangıç formatını ayarla:
+echo '{}' > active_positions.json
+
+# bot_users.json kontrol et  
+cat bot_users.json
+
+# Eğer boşsa, başlangıç formatını ayarla:
+echo '{"Users":{}}' > bot_users.json
 ```
 
 ### 2. Manuel Çalıştırma (Test için)
 
 ```bash
-cd /opt/upbit-trading-bot
+cd upbit-perp
 
 # Environment değişkenlerini yükle
 source load_env.sh
@@ -278,7 +298,7 @@ Test için yeni coin simülasyonu:
 
 ```bash
 # upbit_new.json'a test coin ekle
-nano /opt/upbit-trading-bot/upbit_new.json
+nano upbit_new.json
 ```
 
 ```json
@@ -315,8 +335,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=ubuntu
-WorkingDirectory=/opt/upbit-trading-bot
+User=$USER
+WorkingDirectory=/home/$USER/upbit-perp
 Environment=TELEGRAM_API_ID=12345678
 Environment=TELEGRAM_API_HASH=abc123def456ghi789
 ExecStart=/usr/local/go/bin/go run main.go
@@ -329,6 +349,10 @@ SyslogIdentifier=upbit-monitor
 [Install]
 WantedBy=multi-user.target
 ```
+
+**⚠️ ÖNEMLİ:** 
+- `$USER` kısmını kendi kullanıcı adınla değiştir (örnek: `ubuntu`)
+- `TELEGRAM_API_ID` ve `TELEGRAM_API_HASH`'i gerçek değerlerinle değiştir
 
 #### Telegram Bot Servisi:
 
@@ -344,8 +368,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=ubuntu
-WorkingDirectory=/opt/upbit-trading-bot
+User=$USER
+WorkingDirectory=/home/$USER/upbit-perp
 Environment=TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrSTUvwxYZ
 Environment=BOT_ENCRYPTION_KEY=oH6YUVxMEZlcNb9zJw8gFp3yPtW7aX5uRm2vK0qH4L8=
 ExecStart=/usr/local/go/bin/go run bot_main.go bitget.go
@@ -359,7 +383,9 @@ SyslogIdentifier=upbit-bot
 WantedBy=multi-user.target
 ```
 
-**⚠️ ÖNEMLİ:** Environment değişkenlerini gerçek değerlerinle değiştir!
+**⚠️ ÖNEMLİ:** 
+- `$USER` kısmını kendi kullanıcı adınla değiştir (örnek: `ubuntu`)
+- `TELEGRAM_BOT_TOKEN` ve `BOT_ENCRYPTION_KEY`'i gerçek değerlerinle değiştir
 
 ### 2. Servisleri Etkinleştirme
 
@@ -412,13 +438,13 @@ sudo journalctl -f -u upbit-bot
 
 #### 1. "Permission Denied" Hatası
 ```bash
-sudo chown -R $USER:$USER /opt/upbit-trading-bot
-chmod +x /opt/upbit-trading-bot/*.sh
+sudo chown -R $USER:$USER ~/upbit-perp
+chmod +x ~/upbit-perp/*.sh
 ```
 
 #### 2. "Module Not Found" Hatası  
 ```bash
-cd /opt/upbit-trading-bot
+cd ~/upbit-perp
 go mod tidy
 go mod download
 ```
@@ -446,7 +472,7 @@ sudo systemctl start upbit-bot
 ### Manuel Debug
 
 ```bash
-cd /opt/upbit-trading-bot
+cd ~/upbit-perp
 source load_env.sh
 
 # Debug modunda çalıştır
@@ -484,7 +510,7 @@ BOT_ENCRYPTION_KEY="$BOT_ENCRYPTION_KEY" go run bot_main.go bitget.go  # Termina
 sudo systemctl status upbit-monitor upbit-bot
 
 # Disk kullanımı
-df -h /opt/upbit-trading-bot
+df -h ~/upbit-perp
 
 # Log boyutları  
 sudo du -sh /var/log/journal/
@@ -495,8 +521,11 @@ sudo du -sh /var/log/journal/
 # Sistem güncellemesi
 sudo apt update && sudo apt upgrade -y
 
+# GitHub'dan son güncellemeleri çek
+cd ~/upbit-perp
+git pull origin main
+
 # Go bağımlılık güncellemesi
-cd /opt/upbit-trading-bot
 go get -u ./...
 go mod tidy
 
@@ -507,9 +536,10 @@ sudo systemctl restart upbit-monitor upbit-bot
 ### Backup:
 ```bash
 # Veri dosyalarını yedekle
-cp /opt/upbit-trading-bot/*.json ~/backup/
-cp /opt/upbit-trading-bot/.env ~/backup/
-cp /opt/upbit-trading-bot/sessions/* ~/backup/
+mkdir -p ~/backup
+cp ~/upbit-perp/*.json ~/backup/
+cp ~/upbit-perp/.env ~/backup/
+cp ~/upbit-perp/sessions/* ~/backup/ 2>/dev/null || true
 ```
 
 ---
@@ -525,5 +555,32 @@ Artık sisteminiz Ubuntu 22.04 sunucusunda çalışıyor:
 ✅ **Persistent Storage:** Bot restart → pozisyonlar korunur  
 
 **Bot Linkin:** `t.me/your_upbit_bot`
+
+---
+
+## 🔗 GitHub Repository
+
+**Kaynak Kod:** https://github.com/0xmtnslk/upbit-perp
+
+### 🔄 Gelecekteki Güncellemeler:
+```bash
+# Son güncellemeleri almak için
+cd ~/upbit-perp  
+git pull origin main
+sudo systemctl restart upbit-monitor upbit-bot
+```
+
+### 🍴 Repository'yi Fork Etme:
+GitHub'da repo'yu fork ederek kendi değişikliklerini yapabilir ve kendi versiyonunu oluşturabilirsin!
+
+---
+
+## 🌟 Yeni Özellikler (Son Güncelleme)
+
+✅ **6-Saatlik Durum Bildirimleri:** Her 6 saatte bir esprili sistem durumu mesajları  
+✅ **Gelişmiş P&L Hesaplaması:** Hatırlatmalarda gerçek Bitget API verisi kullanımı  
+✅ **GitHub Entegrasyonu:** Kolay kurulum ve güncelleme sistemi  
+✅ **Persistent Storage:** Bot restart → pozisyonlar korunur  
+✅ **Multi-User Support:** Sınırsız kullanıcı desteği
 
 Sistemi paylaşarak birden fazla kişinin kullanmasını sağlayabilirsin! 🚀
