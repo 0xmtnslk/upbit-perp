@@ -7,3 +7,24 @@ channel = "stable-25_05"
 packages = ["openssl"]
 
 [workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Go Telegram Monitor"
+
+[[workflows.workflow]]
+name = "Go Telegram Monitor"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "go run main.go"
+
+[workflows.workflow.metadata]
+outputType = "console"
