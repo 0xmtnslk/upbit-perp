@@ -101,13 +101,13 @@ class TelegramUpbitMonitor:
         except Exception as e:
             logger.error(f"Error reading existing JSON: {e}")
         
-        # Add new entry
+        # Add new entry at the beginning (latest first)
         new_entry = {
             'symbol': symbol,
             'timestamp': timestamp,
             'detected_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')
         }
-        data['listings'].append(new_entry)
+        data['listings'].insert(0, new_entry)  # Insert at beginning instead of append
         
         # Atomic write using temporary file
         temp_file = self.json_file + '.tmp'
