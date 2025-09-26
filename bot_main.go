@@ -68,6 +68,8 @@ var (
         positionsMutex  sync.RWMutex
 )
 
+const positionsFile = "active_positions.json"
+
 // BotDatabase represents multi-user storage
 type BotDatabase struct {
         Users map[int64]*UserData `json:"users"`
@@ -200,6 +202,9 @@ func NewTelegramBot(token string) (*TelegramBot, error) {
                 log.Printf("Warning: Could not load database: %v", err)
         }
 
+        // Load saved positions from previous sessions
+        loadActivePositions()
+        
         // Start file watcher for upbit_new.json
         go botInstance.startFileWatcher()
         
@@ -762,6 +767,9 @@ func (tb *TelegramBot) closeUserPositions(chatID int64, user *UserData) {
                 }
         }
         positionsMutex.Unlock()
+        
+        // Save updated positions to file
+        go saveActivePositions()
 
         successMsg := fmt.Sprintf(`✅ **Pozisyonlar Başarıyla Kapatıldı**
 
@@ -1148,6 +1156,9 @@ func (tb *TelegramBot) handleCloseSpecificPosition(chatID int64, userID int64, s
                 log.Printf("🗑️ Removed position %s from tracking", positionKey)
         }
         positionsMutex.Unlock()
+        
+        // Save updated positions to file
+        go saveActivePositions()
 
         tb.sendMessage(chatID, fmt.Sprintf("✅ %s pozisyonu başarıyla kapatıldı!\n\nPozisyon ID: %s", symbol, result.OrderID))
 }
@@ -1244,6 +1255,9 @@ Pozisyon ID: %s`,
         }
         positionsMutex.Unlock()
         
+        // Save positions to file
+        go saveActivePositions()
+        
         log.Printf("📝 Position %s tracked for user %d", positionKey, chatID)
 }
 
@@ -1251,16 +1265,30 @@ Pozisyon ID: %s`,
 func (tb *TelegramBot) startPositionReminders() {
         log.Printf("⏰ Starting position reminder system...")
         
+        // Debug: Check initial state
+        positionsMutex.RLock()
+        log.Printf("🔍 Initial active positions count: %d", len(activePositions))
+        for key, pos := range activePositions {
+                log.Printf("📊 Found position: %s (opened %s ago)", key, time.Since(pos.OpenTime).Round(time.Second))
+        }
+        positionsMutex.RUnlock()
+        
         ticker := time.NewTicker(5 * time.Minute)
         defer ticker.Stop()
         
         for range ticker.C {
                 now := time.Now()
+                log.Printf("🔔 Reminder ticker fired at %s", now.Format("15:04:05"))
                 
                 positionsMutex.Lock()
+                log.Printf("🔍 Checking %d active positions for reminders", len(activePositions))
                 for positionKey, position := range activePositions {
+                        timeSinceLastReminder := now.Sub(position.LastReminder)
+                        log.Printf("📊 Position %s: Last reminder %s ago (need 5min)", positionKey, timeSinceLastReminder.Round(time.Second))
+                        
                         // Check if 5 minutes have passed since last reminder
-                        if now.Sub(position.LastReminder) >= 5*time.Minute {
+                        if timeSinceLastReminder >= 5*time.Minute {
+                                log.Printf("✅ Sending reminder for position %s", positionKey)
                                 positionsMutex.Unlock() // Unlock before sending reminder to avoid deadlock
                                 tb.sendPositionReminder(position)
                                 positionsMutex.Lock()   // Re-lock to update LastReminder
@@ -1362,6 +1390,53 @@ func formatDuration(d time.Duration) string {
                 return fmt.Sprintf("%.0fs %.0fd", d.Hours(), d.Minutes()-d.Hours()*60)
         }
         return fmt.Sprintf("%.0fd", d.Minutes())
+}
+
+// Save active positions to file
+func saveActivePositions() {
+        positionsMutex.RLock()
+        defer positionsMutex.RUnlock()
+        
+        file, err := os.Create(positionsFile)
+        if err != nil {
+                log.Printf("⚠️ Could not save positions: %v", err)
+                return
+        }
+        defer file.Close()
+        
+        encoder := json.NewEncoder(file)
+        encoder.SetIndent("", "  ")
+        if err := encoder.Encode(activePositions); err != nil {
+                log.Printf("⚠️ Could not encode positions: %v", err)
+        } else {
+                log.Printf("💾 Saved %d active positions to file", len(activePositions))
+        }
+}
+
+// Load active positions from file
+func loadActivePositions() {
+        file, err := os.Open(positionsFile)
+        if err != nil {
+                log.Printf("ℹ️ No saved positions file found (normal on first run)")
+                return
+        }
+        defer file.Close()
+        
+        var savedPositions map[string]*PositionInfo
+        decoder := json.NewDecoder(file)
+        if err := decoder.Decode(&savedPositions); err != nil {
+                log.Printf("⚠️ Could not decode saved positions: %v", err)
+                return
+        }
+        
+        positionsMutex.Lock()
+        activePositions = savedPositions
+        positionsMutex.Unlock()
+        
+        log.Printf("📂 Loaded %d active positions from file", len(savedPositions))
+        for key, pos := range savedPositions {
+                log.Printf("📊 Restored position: %s (opened %s ago)", key, time.Since(pos.OpenTime).Round(time.Second))
+        }
 }
 
 // StartTradingBot starts the trading bot (to be called from main.go)
