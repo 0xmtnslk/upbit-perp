@@ -245,7 +245,9 @@ cat bot_users.json
 echo '{"Users":{}}' > bot_users.json
 ```
 
-### 2. Manuel Çalıştırma (Test için)
+### 2. Telegram Session Oluşturma (ÖNEMLİ!)
+
+**⚠️ ZORUNLU ADIM:** Servisi çalıştırmadan önce Telegram session'ını oluştur!
 
 ```bash
 cd upbit-perp
@@ -253,13 +255,29 @@ cd upbit-perp
 # Environment değişkenlerini yükle
 source load_env.sh
 
-# Go Telegram Monitor'u çalıştır (Terminal 1)
+# İLK KEZ Telegram Monitor'u manuel çalıştır
 go run main.go
+```
 
-# Yeni terminal aç (Terminal 2)
-# Telegram Bot'u çalıştır  
+**Bu adımda:**
+1. Telefon numaranı isteyecek (örnek: +90XXXXXXXXXX)
+2. Telegram'a SMS kodu gelecek
+3. Kodu gir (örnek: 12345)  
+4. 2-factor authentication varsa şifreni gir
+5. `✅ Authentication successful` görene kadar bekle
+6. `Ctrl+C` ile programı durdur
+
+**Session dosyası `sessions/` klasörüne kaydedildi!** ✅
+
+### 3. Bot Servisini Test Etme
+
+```bash
+# Yeni terminal aç (Terminal 2)  
+# Telegram Bot'u çalıştır
 BOT_ENCRYPTION_KEY="$BOT_ENCRYPTION_KEY" go run bot_main.go bitget.go
 ```
+
+Bot'un düzgün çalıştığını görünce `Ctrl+C` ile durdur.
 
 ---
 
@@ -318,6 +336,8 @@ Dosyayı kaydet ve bot loglarında otomatik işlem açılıp açılmadığını 
 ---
 
 ## ⚙️ Servis Olarak Çalıştırma
+
+**⚠️ UYARI:** Servisleri çalıştırmadan önce yukarıdaki **Telegram Session Oluşturma** adımını mutlaka yap!
 
 ### 1. Systemd Servis Dosyaları Oluşturma
 
@@ -389,6 +409,8 @@ WantedBy=multi-user.target
 
 ### 2. Servisleri Etkinleştirme
 
+**⚠️ ÖNEMLİ:** Session oluşturulduktan sonra servisleri başlat!
+
 ```bash
 # Systemd'yi reload et
 sudo systemctl daemon-reload
@@ -397,13 +419,38 @@ sudo systemctl daemon-reload
 sudo systemctl enable upbit-monitor
 sudo systemctl enable upbit-bot
 
-# Servisleri başlat
+# ÖNCE Monitor'u başlat
 sudo systemctl start upbit-monitor  
+
+# Monitor'un başladığını kontrol et
+sudo systemctl status upbit-monitor
+
+# Monitor çalışıyorsa Bot'u başlat  
 sudo systemctl start upbit-bot
 
-# Durum kontrol et
+# Her iki servisin durumunu kontrol et
 sudo systemctl status upbit-monitor
 sudo systemctl status upbit-bot
+```
+
+### 3. Session Sorun Giderme
+
+Eğer servis "authentication failed" hatası verirse:
+
+```bash
+# Servisi durdur
+sudo systemctl stop upbit-monitor
+
+# Manuel olarak tekrar çalıştırıp session'ı yenile
+cd ~/upbit-perp
+source load_env.sh
+go run main.go
+# Telefon numarası + SMS kodu + (varsa) şifre gir
+# Ctrl+C ile durdur
+
+# Servisi tekrar başlat
+sudo systemctl start upbit-monitor
+sudo systemctl status upbit-monitor
 ```
 
 ### 3. Logları İzleme
@@ -453,7 +500,17 @@ go mod download
 - API ID ve Hash'in doğru olduğunu kontrol et
 - my.telegram.org'da uygulamanın aktif olduğunu kontrol et
 
-#### 4. Bot Token Hatası
+#### 4. Session Authentication Hatası
+```bash
+# Session dosyasını sil ve yeniden oluştur
+rm -rf ~/upbit-perp/sessions/*
+cd ~/upbit-perp
+source load_env.sh
+go run main.go
+# Telefon + SMS kodu + şifre gir
+```
+
+#### 5. Bot Token Hatası
 - BotFather'dan aldığın token'ı kontrol et
 - Bot'un aktif olduğunu kontrol et
 
