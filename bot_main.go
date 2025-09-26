@@ -726,7 +726,7 @@ func (tb *TelegramBot) handleMessage(update tgbotapi.Update) {
                         tb.handleStart(chatID, userID, username)
                 case "setup":
                         tb.handleSetup(chatID, userID, username)
-                case "settings":
+                case "settings", "setting":  // Both /settings and /setting work
                         tb.handleSettings(chatID, userID)
                 case "close":
                         tb.handleClose(chatID, userID)
