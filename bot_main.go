@@ -590,13 +590,26 @@ https://www.bitget.com/api-doc
 
 // Handle /settings command
 func (tb *TelegramBot) handleSettings(chatID int64, userID int64) {
+        log.Printf("🔧 Settings called for user %d", userID)
+        
         user, exists := tb.getUser(userID)
-        if !exists || user.BitgetAPIKey == "" {
+        if !exists {
+                log.Printf("❌ User %d not found", userID)
+                msg := tgbotapi.NewMessage(chatID, "❌ Henüz hiç kurulum yapmadınız. 🔧 Setup butonuna tıklayın.")
+                msg.ReplyMarkup = tb.createMainMenu()
+                tb.bot.Send(msg)
+                return
+        }
+        
+        if user.BitgetAPIKey == "" {
+                log.Printf("❌ User %d has no API key", userID)
                 msg := tgbotapi.NewMessage(chatID, "❌ Henüz API ayarlarını yapmadınız. 🔧 Setup butonuna tıklayın.")
                 msg.ReplyMarkup = tb.createMainMenu()
                 tb.bot.Send(msg)
                 return
         }
+        
+        log.Printf("✅ Showing settings for user %d", userID)
 
         // Calculate risk level properly
         var riskLevel string
