@@ -18,6 +18,10 @@ author = "agent"
 task = "workflow.run"
 args = "Go Telegram Monitor"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Telegram Bot"
+
 [[workflows.workflow]]
 name = "Go Telegram Monitor"
 author = "agent"
@@ -25,6 +29,17 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "go run main.go"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "Telegram Bot"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "BOT_ENCRYPTION_KEY=\"oH6YUVxMEZlcNb9zJw8gFp3yPtW7aX5uRm2vK0qH4L8=\" go run bot_main.go bitget.go"
 
 [workflows.workflow.metadata]
 outputType = "console"

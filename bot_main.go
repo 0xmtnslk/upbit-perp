@@ -17,6 +17,7 @@ import (
         "sync"
         "time"
 
+        "github.com/fsnotify/fsnotify"
         tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
@@ -54,12 +55,20 @@ type BotDatabase struct {
         mutex sync.RWMutex
 }
 
+// UpbitDetection represents a detected coin from upbit_new.json
+type UpbitDetection struct {
+        Symbol      string `json:"symbol"`
+        Timestamp   string `json:"timestamp"`
+        HumanTime   string `json:"human_time"`
+}
+
 // TelegramBot represents our multi-user bot
 type TelegramBot struct {
         bot          *tgbotapi.BotAPI
         database     *BotDatabase
         dbFile       string
         encryptionKey []byte
+        lastProcessedSymbol string // Track last processed coin to prevent duplicates
 }
 
 // Generate encryption key from environment (required for persistence)
@@ -166,6 +175,9 @@ func NewTelegramBot(token string) (*TelegramBot, error) {
         if err := botInstance.loadDatabase(); err != nil {
                 log.Printf("Warning: Could not load database: %v", err)
         }
+
+        // Start file watcher for upbit_new.json
+        go botInstance.startFileWatcher()
 
         return botInstance, nil
 }
@@ -336,6 +348,151 @@ func (tb *TelegramBot) getAllActiveUsers() []*UserData {
                 }
         }
         return activeUsers
+}
+
+// Start file watcher for upbit_new.json to trigger auto-trading
+func (tb *TelegramBot) startFileWatcher() {
+        watcher, err := fsnotify.NewWatcher()
+        if err != nil {
+                log.Printf("❌ Failed to create file watcher: %v", err)
+                return
+        }
+        defer watcher.Close()
+
+        // Watch upbit_new.json file
+        upbitFile := "upbit_new.json"
+        err = watcher.Add(upbitFile)
+        if err != nil {
+                log.Printf("❌ Failed to watch %s: %v", upbitFile, err)
+                return
+        }
+
+        log.Printf("👁️  Started watching %s for new UPBIT listings...", upbitFile)
+
+        // Initialize with current latest symbol to prevent triggering on startup
+        if latestSymbol := tb.getLatestDetectedSymbol(); latestSymbol != "" {
+                tb.lastProcessedSymbol = latestSymbol
+                log.Printf("🔄 Current latest symbol: %s", latestSymbol)
+        }
+
+        for {
+                select {
+                case event, ok := <-watcher.Events:
+                        if !ok {
+                                return
+                        }
+                        if event.Op&fsnotify.Write == fsnotify.Write {
+                                log.Printf("📝 Detected file change: %s", event.Name)
+                                tb.processUpbitFile()
+                        }
+                case err, ok := <-watcher.Errors:
+                        if !ok {
+                                return
+                        }
+                        log.Printf("❌ File watcher error: %v", err)
+                }
+        }
+}
+
+// Get latest detected symbol from upbit_new.json
+func (tb *TelegramBot) getLatestDetectedSymbol() string {
+        data, err := ioutil.ReadFile("upbit_new.json")
+        if err != nil {
+                log.Printf("Warning: Could not read upbit_new.json: %v", err)
+                return ""
+        }
+
+        var detections []UpbitDetection
+        if err := json.Unmarshal(data, &detections); err != nil {
+                log.Printf("Warning: Could not parse upbit_new.json: %v", err)
+                return ""
+        }
+
+        if len(detections) == 0 {
+                return ""
+        }
+
+        // Return the latest (last) detection symbol
+        return detections[len(detections)-1].Symbol
+}
+
+// Process upbit_new.json changes and trigger auto-trading
+func (tb *TelegramBot) processUpbitFile() {
+        latestSymbol := tb.getLatestDetectedSymbol()
+        if latestSymbol == "" {
+                return
+        }
+
+        // Check if this is a new symbol we haven't processed yet
+        if latestSymbol == tb.lastProcessedSymbol {
+                log.Printf("🔄 Symbol %s already processed, skipping", latestSymbol)
+                return
+        }
+
+        // Update last processed symbol
+        tb.lastProcessedSymbol = latestSymbol
+        log.Printf("🚨 NEW UPBIT LISTING DETECTED: %s", latestSymbol)
+
+        // Get all active users for auto-trading
+        activeUsers := tb.getAllActiveUsers()
+        if len(activeUsers) == 0 {
+                log.Printf("⚠️  No active users found for auto-trading")
+                return
+        }
+
+        log.Printf("📊 Triggering auto-trading for %d users on symbol: %s", len(activeUsers), latestSymbol)
+
+        // Trigger auto-trading for each active user
+        for _, user := range activeUsers {
+                go tb.executeAutoTrade(user, latestSymbol)
+        }
+}
+
+// Execute automatic trading for a user when new UPBIT listing is detected
+func (tb *TelegramBot) executeAutoTrade(user *UserData, symbol string) {
+        log.Printf("🤖 Auto-trading for user %d (%s) on symbol: %s", user.UserID, user.Username, symbol)
+
+        // Validate user has complete setup
+        if user.BitgetAPIKey == "" || user.BitgetSecret == "" || user.BitgetPasskey == "" {
+                log.Printf("⚠️  User %d missing API credentials, skipping auto-trade", user.UserID)
+                tb.sendMessage(user.UserID, fmt.Sprintf("🚫 Auto-trade failed for %s: Missing API credentials. Please /setup first.", symbol))
+                return
+        }
+
+        if user.MarginUSDT <= 0 {
+                log.Printf("⚠️  User %d has invalid margin amount: %f", user.UserID, user.MarginUSDT)
+                tb.sendMessage(user.UserID, fmt.Sprintf("🚫 Auto-trade failed for %s: Invalid margin amount. Please /setup first.", symbol))
+                return
+        }
+
+        // Format symbol for Bitget (add USDT suffix)
+        tradingSymbol := symbol + "USDT"
+        
+        // Initialize Bitget API client
+        bitgetAPI := NewBitgetAPI(user.BitgetAPIKey, user.BitgetSecret, user.BitgetPasskey)
+        
+        // Send notification to user
+        tb.sendMessage(user.UserID, fmt.Sprintf("🚀 Auto-trade triggered for %s\nMargin: %.2f USDT\nLeverage: %dx\nOpening long position...", tradingSymbol, user.MarginUSDT, user.Leverage))
+        
+        // Execute long position
+        result, err := bitgetAPI.OpenLongPosition(tradingSymbol, user.MarginUSDT, user.Leverage)
+        if err != nil {
+                log.Printf("❌ Auto-trade failed for user %d on %s: %v", user.UserID, tradingSymbol, err)
+                tb.sendMessage(user.UserID, fmt.Sprintf("❌ Auto-trade FAILED for %s: %v", tradingSymbol, err))
+                return
+        }
+
+        log.Printf("✅ Auto-trade SUCCESS for user %d on %s", user.UserID, tradingSymbol)
+        tb.sendMessage(user.UserID, fmt.Sprintf("✅ Auto-trade SUCCESS for %s!\n\n%s", tradingSymbol, result))
+}
+
+// Send message to user (helper method)
+func (tb *TelegramBot) sendMessage(chatID int64, text string) {
+        msg := tgbotapi.NewMessage(chatID, text)
+        _, err := tb.bot.Send(msg)
+        if err != nil {
+                log.Printf("Failed to send message to %d: %v", chatID, err)
+        }
 }
 
 // Handle /start command
@@ -682,4 +839,9 @@ func StartTradingBot() {
 
         log.Printf("🚀 Starting Multi-User Upbit-Bitget Auto Trading Bot...")
         bot.Start()
+}
+
+// Main entry point
+func main() {
+        StartTradingBot()
 }
