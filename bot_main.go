@@ -49,6 +49,25 @@ type UserData struct {
         UpdatedAt     string    `json:"updated_at"`
 }
 
+// PositionInfo stores position tracking data for reminders
+type PositionInfo struct {
+        UserID      int64   `json:"user_id"`
+        Symbol      string  `json:"symbol"`
+        OrderID     string  `json:"order_id"`
+        OpenPrice   float64 `json:"open_price"`
+        Size        float64 `json:"size"`
+        MarginUSDT  float64 `json:"margin_usdt"`
+        Leverage    int     `json:"leverage"`
+        OpenTime    time.Time `json:"open_time"`
+        LastReminder time.Time `json:"last_reminder"`
+}
+
+// ActivePositions stores currently tracked positions with thread-safe access
+var (
+        activePositions = make(map[string]*PositionInfo)
+        positionsMutex  sync.RWMutex
+)
+
 // BotDatabase represents multi-user storage
 type BotDatabase struct {
         Users map[int64]*UserData `json:"users"`
@@ -183,6 +202,9 @@ func NewTelegramBot(token string) (*TelegramBot, error) {
 
         // Start file watcher for upbit_new.json
         go botInstance.startFileWatcher()
+        
+        // Start position reminder system
+        go botInstance.startPositionReminders()
 
         return botInstance, nil
 }
@@ -505,9 +527,8 @@ func (tb *TelegramBot) executeAutoTrade(user *UserData, symbol string) {
 
         log.Printf("✅ Auto-trade SUCCESS for user %d on %s", user.UserID, tradingSymbol)
         
-        // Send success notification with close position button
-        resultText := fmt.Sprintf("Pozisyon başarıyla açıldı! OrderId: %s", result.OrderID)
-        tb.sendPositionNotification(user.UserID, tradingSymbol, resultText)
+        // Send enhanced notification with P&L tracking
+        tb.sendPositionNotification(user.UserID, result)
 }
 
 // Send message to user (helper method)
@@ -1112,20 +1133,68 @@ func (tb *TelegramBot) handleCloseSpecificPosition(chatID int64, userID int64, s
         tb.sendMessage(chatID, fmt.Sprintf("✅ %s pozisyonu başarıyla kapatıldı!\n\nPozisyon ID: %s", symbol, result.OrderID))
 }
 
-// Send position notification with close button
-func (tb *TelegramBot) sendPositionNotification(chatID int64, symbol string, result string) {
-        notificationMsg := fmt.Sprintf(`🎉 **Pozisyon Açıldı!**
+// Send enhanced position notification with P&L tracking
+func (tb *TelegramBot) sendPositionNotification(chatID int64, orderResp *OrderResponse) {
+        // Calculate current P&L
+        user, exists := tb.getUser(chatID)
+        if !exists {
+                return
+        }
+        
+        api := NewBitgetAPI(user.BitgetAPIKey, user.BitgetSecret, user.BitgetPasskey)
+        currentPrice, err := api.GetSymbolPrice(orderResp.Symbol)
+        if err != nil {
+                currentPrice = orderResp.OpenPrice // Fallback to open price
+        }
+        
+        // Calculate P&L: (CurrentPrice - OpenPrice) * Size
+        priceChange := currentPrice - orderResp.OpenPrice
+        priceChangePercent := (priceChange / orderResp.OpenPrice) * 100
+        usdPnL := priceChange * orderResp.Size
+        usdPnLWithLeverage := usdPnL * float64(orderResp.Leverage)
+        
+        // Format P&L colors
+        pnlIcon := "🔴"
+        pnlColor := "📉"
+        if usdPnLWithLeverage > 0 {
+                pnlIcon = "🟢"
+                pnlColor = "📈"
+        } else if usdPnLWithLeverage == 0 {
+                pnlIcon = "⚪"
+                pnlColor = "➡️"
+        }
+        
+        notificationMsg := fmt.Sprintf(`🎉 Pozisyon Açıldı!
 
-💹 **Sembol:** %s
-📊 **Sonuç:** 
-%s
+💹 Sembol: %s
+📊 Açılış Fiyatı: $%.4f
+💰 Güncel Fiyat: $%.4f
+📏 Pozisyon Boyutu: %.8f
+⚖️ Kaldıraç: %dx
+💵 Marjin: %.2f USDT
 
-**Pozisyonunuzu istediğiniz zaman kapatabilirsiniz:**`, symbol, result)
+%s Fiyat Değişimi: %+.4f (%.2f%%)
+%s P&L: %+.2f USDT
+
+⏰ Sonraki hatırlatma: 5 dakika
+Pozisyon ID: %s`, 
+                orderResp.Symbol,
+                orderResp.OpenPrice,
+                currentPrice,
+                orderResp.Size,
+                orderResp.Leverage,
+                orderResp.MarginUSDT,
+                pnlColor,
+                priceChange,
+                priceChangePercent,
+                pnlIcon,
+                usdPnLWithLeverage,
+                orderResp.OrderID)
 
         // Create close position button
         closeButton := tgbotapi.NewInlineKeyboardMarkup(
                 tgbotapi.NewInlineKeyboardRow(
-                        tgbotapi.NewInlineKeyboardButtonData(fmt.Sprintf("❌ %s Pozisyonunu Kapat", symbol), fmt.Sprintf("close_position_%s", symbol)),
+                        tgbotapi.NewInlineKeyboardButtonData(fmt.Sprintf("❌ %s Pozisyonunu Kapat", orderResp.Symbol), fmt.Sprintf("close_position_%s", orderResp.Symbol)),
                 ),
                 tgbotapi.NewInlineKeyboardRow(
                         tgbotapi.NewInlineKeyboardButtonData("📊 Bakiye", "balance"),
@@ -1137,9 +1206,143 @@ func (tb *TelegramBot) sendPositionNotification(chatID int64, symbol string, res
         )
 
         msg := tgbotapi.NewMessage(chatID, notificationMsg)
-        msg.ParseMode = "Markdown"
         msg.ReplyMarkup = closeButton
         tb.bot.Send(msg)
+        
+        // Store position for tracking and reminders (thread-safe)
+        positionKey := fmt.Sprintf("%d_%s", chatID, orderResp.Symbol)
+        positionsMutex.Lock()
+        activePositions[positionKey] = &PositionInfo{
+                UserID:      chatID,
+                Symbol:      orderResp.Symbol,
+                OrderID:     orderResp.OrderID,
+                OpenPrice:   orderResp.OpenPrice,
+                Size:        orderResp.Size,
+                MarginUSDT:  orderResp.MarginUSDT,
+                Leverage:    orderResp.Leverage,
+                OpenTime:    time.Now(),
+                LastReminder: time.Now(),
+        }
+        positionsMutex.Unlock()
+        
+        log.Printf("📝 Position %s tracked for user %d", positionKey, chatID)
+}
+
+// Start 5-minute position reminder system
+func (tb *TelegramBot) startPositionReminders() {
+        log.Printf("⏰ Starting position reminder system...")
+        
+        ticker := time.NewTicker(5 * time.Minute)
+        defer ticker.Stop()
+        
+        for range ticker.C {
+                now := time.Now()
+                
+                positionsMutex.Lock()
+                for positionKey, position := range activePositions {
+                        // Check if 5 minutes have passed since last reminder
+                        if now.Sub(position.LastReminder) >= 5*time.Minute {
+                                positionsMutex.Unlock() // Unlock before sending reminder to avoid deadlock
+                                tb.sendPositionReminder(position)
+                                positionsMutex.Lock()   // Re-lock to update LastReminder
+                                // Re-check position still exists (could have been deleted)
+                                if pos, exists := activePositions[positionKey]; exists {
+                                        pos.LastReminder = now
+                                        log.Printf("📢 Sent 5-min reminder for position %s", positionKey)
+                                }
+                        }
+                }
+                positionsMutex.Unlock()
+        }
+}
+
+// Send position reminder with current P&L
+func (tb *TelegramBot) sendPositionReminder(position *PositionInfo) {
+        user, exists := tb.getUser(position.UserID)
+        if !exists {
+                return
+        }
+        
+        api := NewBitgetAPI(user.BitgetAPIKey, user.BitgetSecret, user.BitgetPasskey)
+        currentPrice, err := api.GetSymbolPrice(position.Symbol)
+        if err != nil {
+                log.Printf("⚠️ Could not get current price for reminder: %v", err)
+                currentPrice = position.OpenPrice // Fallback
+        }
+        
+        // Calculate duration
+        duration := time.Since(position.OpenTime)
+        
+        // Calculate P&L
+        priceChange := currentPrice - position.OpenPrice
+        priceChangePercent := (priceChange / position.OpenPrice) * 100
+        usdPnL := priceChange * position.Size
+        usdPnLWithLeverage := usdPnL * float64(position.Leverage)
+        
+        // Format P&L colors and icons
+        pnlIcon := "🔴"
+        pnlColor := "📉"
+        statusEmoji := "⚠️"
+        if usdPnLWithLeverage > 0 {
+                pnlIcon = "🟢"
+                pnlColor = "📈" 
+                statusEmoji = "✅"
+        } else if usdPnLWithLeverage == 0 {
+                pnlIcon = "⚪"
+                pnlColor = "➡️"
+                statusEmoji = "⏸️"
+        }
+        
+        reminderMsg := fmt.Sprintf(`⏰ Pozisyon Hatırlatması
+        
+%s %s Pozisyonu Aktif
+
+📊 Açılış: $%.4f
+💰 Güncel: $%.4f  
+⚖️ Kaldıraç: %dx
+⏳ Süre: %s
+
+%s Fiyat Değişimi: %+.4f (%.2f%%)
+%s Güncel P&L: %+.2f USDT
+
+Pozisyonunuzu istediğiniz zaman kapatabilirsiniz:`,
+                statusEmoji,
+                position.Symbol,
+                position.OpenPrice,
+                currentPrice,
+                position.Leverage,
+                formatDuration(duration),
+                pnlColor,
+                priceChange,
+                priceChangePercent,
+                pnlIcon,
+                usdPnLWithLeverage)
+        
+        // Create close position button
+        closeButton := tgbotapi.NewInlineKeyboardMarkup(
+                tgbotapi.NewInlineKeyboardRow(
+                        tgbotapi.NewInlineKeyboardButtonData(fmt.Sprintf("❌ %s Pozisyonunu Kapat", position.Symbol), fmt.Sprintf("close_position_%s", position.Symbol)),
+                ),
+                tgbotapi.NewInlineKeyboardRow(
+                        tgbotapi.NewInlineKeyboardButtonData("📊 Bakiye", "balance"),
+                        tgbotapi.NewInlineKeyboardButtonData("📈 Tüm Pozisyonlar", "positions"),
+                ),
+                tgbotapi.NewInlineKeyboardRow(
+                        tgbotapi.NewInlineKeyboardButtonData("🔕 Hatırlatıcıyı Durdur", fmt.Sprintf("stop_reminders_%s", position.Symbol)),
+                ),
+        )
+        
+        msg := tgbotapi.NewMessage(position.UserID, reminderMsg)
+        msg.ReplyMarkup = closeButton
+        tb.bot.Send(msg)
+}
+
+// Format duration to human readable format
+func formatDuration(d time.Duration) string {
+        if d.Hours() >= 1 {
+                return fmt.Sprintf("%.0fs %.0fd", d.Hours(), d.Minutes()-d.Hours()*60)
+        }
+        return fmt.Sprintf("%.0fd", d.Minutes())
 }
 
 // StartTradingBot starts the trading bot (to be called from main.go)
@@ -1162,3 +1365,4 @@ func StartTradingBot() {
 func main() {
         StartTradingBot()
 }
+
