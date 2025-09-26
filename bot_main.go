@@ -211,6 +211,9 @@ func NewTelegramBot(token string) (*TelegramBot, error) {
         // Start position reminder system
         go botInstance.startPositionReminders()
 
+        // Start 6-hour status notifications
+        go botInstance.startStatusNotifications()
+
         return botInstance, nil
 }
 
@@ -1505,6 +1508,91 @@ func StartTradingBot() {
 
         log.Printf("🚀 Starting Multi-User Upbit-Bitget Auto Trading Bot...")
         bot.Start()
+}
+
+// Start 6-hour status notification system
+func (tb *TelegramBot) startStatusNotifications() {
+        log.Printf("📢 Starting 6-hour status notification system...")
+        
+        // Her 6 saatte bir çalış
+        ticker := time.NewTicker(6 * time.Hour)
+        defer ticker.Stop()
+        
+        // Farklı esprili mesajlar
+        messages := []string{
+                `🚀 **Patron Rahat Ol!** 
+
+📊 Sistem full performansta çalışıyor!
+🎯 @AstronomicaNews'u takip ediyoruz
+💰 Yeni coin → Otomatik para kazanma modu aktif
+⚡ Ready to make money! 💸`,
+
+                `💎 **Boss, Everything Under Control!**
+
+🔥 Bot sistemi 7/24 nöbette!  
+👀 Upbit'teki her hareketi izliyoruz
+💸 Listing anında → Ka-ching! 💰
+🚀 Next millionaire loading... ⏳`,
+
+                `⚡ **Patron, Para Makinesi Çalışıyor!**
+
+🎯 Sistem stabil ve hazır bekliyor
+👁️ Coin takip sistemi: ✅ Aktif
+🤑 Auto-trade modu: ✅ Silahlı ve hazır  
+💪 Upbit listing = Bizim şansımız! 🎰`,
+
+                `🎰 **Casino Kapalı, Biz Açığız!**
+
+✨ Bot sistemi smooth çalışıyor
+🔍 Her Upbit coin'i radar altında
+💵 Listing news → Instant action!
+😎 Chill yap patron, bot çalışıyor! 🍹`,
+
+                `🚀 **Houston, No Problem Here!**
+
+📈 Sistem operasyonel durumda
+🎯 Target: Upbit new listings  
+💰 Mission: Para kazanmak!
+✅ Bot status: Ready to rock! 🤘`,
+
+                `💪 **Alpha Bot Mode Aktif!**
+
+🔥 Sistemler GO durumunda
+🎯 Upbit coin'leri keşif modunda
+💎 Listing = Profit opportunity!
+🚀 Biz hazırız, Upbit hazır mı? 😏`,
+        }
+        
+        messageIndex := 0
+        
+        for {
+                select {
+                case <-ticker.C:
+                        log.Printf("📢 6-hour status notification triggered")
+                        
+                        // Tüm aktif kullanıcılara mesaj gönder
+                        tb.database.mutex.Lock()
+                        activeUsers := 0
+                        for _, user := range tb.database.Users {
+                                if user.IsActive && user.BitgetAPIKey != "" {
+                                        activeUsers++
+                                        // Mesajı gönder
+                                        msg := tgbotapi.NewMessage(user.UserID, messages[messageIndex])
+                                        msg.ParseMode = "Markdown"
+                                        tb.bot.Send(msg)
+                                        
+                                        // Rate limiting için kısa bekleme
+                                        time.Sleep(100 * time.Millisecond)
+                                }
+                        }
+                        tb.database.mutex.Unlock()
+                        
+                        // Bir sonraki mesaja geç (döngüsel)
+                        messageIndex = (messageIndex + 1) % len(messages)
+                        
+                        log.Printf("📢 Status notification sent to %d active users", activeUsers)
+                }
+        }
 }
 
 // Main entry point
