@@ -20,6 +20,36 @@ import (
         "github.com/gotd/td/session"
 )
 
+// Custom authentication handler that doesn't send empty passwords
+type codeOnlyAuth struct {
+        phone        string
+        codeFunc     func(context.Context, *tg.AuthSentCode) (string, error)
+        passwordFunc func(context.Context) (string, error)
+}
+
+func (c *codeOnlyAuth) Phone(_ context.Context) (string, error) {
+        return c.phone, nil
+}
+
+func (c *codeOnlyAuth) Password(ctx context.Context) (string, error) {
+        log.Printf("🔐 2FA password required...")
+        return c.passwordFunc(ctx)
+}
+
+func (c *codeOnlyAuth) Code(ctx context.Context, sentCode *tg.AuthSentCode) (string, error) {
+        return c.codeFunc(ctx, sentCode)
+}
+
+func (c *codeOnlyAuth) AcceptTermsOfService(_ context.Context, tos tg.HelpTermsOfService) error {
+        // Auto-accept TOS if needed
+        return nil
+}
+
+func (c *codeOnlyAuth) SignUp(ctx context.Context) (auth.UserInfo, error) {
+        // We don't handle sign up - only sign in
+        return auth.UserInfo{}, fmt.Errorf("sign up not supported - please register your phone number first")
+}
+
 type ListingEntry struct {
         Symbol     string `json:"symbol"`
         Timestamp  string `json:"timestamp"`
@@ -326,57 +356,25 @@ func (m *TelegramUpbitMonitor) Start() error {
                                 return fmt.Errorf("failed to read phone number: %v", err)
                         }
 
-                        // First try without password
-                        log.Printf("📱 Attempting authentication with phone and code...")
+                        // Clear any existing session issues
+                        log.Printf("📱 Starting fresh authentication flow...")
+
+                        // Try authentication with proper flow
                         err = m.client.Auth().IfNecessary(ctx, auth.NewFlow(
-                                auth.Constant(
-                                        phone, 
-                                        "",
-                                        auth.CodeAuthenticatorFunc(func(ctx context.Context, sentCode *tg.AuthSentCode) (string, error) {
+                                &codeOnlyAuth{
+                                        phone: phone,
+                                        codeFunc: func(ctx context.Context, sentCode *tg.AuthSentCode) (string, error) {
                                                 return m.readCode()
-                                        }),
-                                ),
+                                        },
+                                        passwordFunc: func(ctx context.Context) (string, error) {
+                                                return m.readPassword()
+                                        },
+                                },
                                 auth.SendCodeOptions{},
                         ))
 
                         if err != nil {
-                                log.Printf("⚠️  Basic auth failed: %v", err)
-                                
-                                // Check if 2FA password is required
-                                if strings.Contains(err.Error(), "SESSION_PASSWORD_NEEDED") || strings.Contains(err.Error(), "password") {
-                                        log.Printf("🔐 2FA password required...")
-                                        password, passErr := m.readPassword()
-                                        if passErr != nil {
-                                                return fmt.Errorf("failed to read password: %v", passErr)
-                                        }
-                                        
-                                        // If password is empty, try once more
-                                        if password == "" {
-                                                log.Printf("⚠️  No password provided, trying again...")
-                                                password, passErr = m.readPassword()
-                                                if passErr != nil {
-                                                        return fmt.Errorf("failed to read password: %v", passErr)
-                                                }
-                                        }
-                                        
-                                        // Try with password
-                                        log.Printf("🔐 Attempting authentication with password...")
-                                        if err := m.client.Auth().IfNecessary(ctx, auth.NewFlow(
-                                                auth.Constant(
-                                                        phone, 
-                                                        password,
-                                                        auth.CodeAuthenticatorFunc(func(ctx context.Context, sentCode *tg.AuthSentCode) (string, error) {
-                                                                // If code is needed again, request it
-                                                                return m.readCode()
-                                                        }),
-                                                ),
-                                                auth.SendCodeOptions{},
-                                        )); err != nil {
-                                                return fmt.Errorf("authentication with password failed: %v", err)
-                                        }
-                                } else {
-                                        return fmt.Errorf("authentication failed: %v", err)
-                                }
+                                return fmt.Errorf("authentication failed: %v", err)
                         }
                 }
 
