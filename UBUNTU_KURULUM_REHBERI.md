@@ -1,6 +1,6 @@
-# 🚀 Ubuntu 22.04 Cryptocurrency Trading Bot Kurulum Rehberi
+# 🚀 Ubuntu 22.04 Cryptocurrency Trading Bot Kurulum Rehberi (ROOT)
 
-Bu rehber, Upbit-Bitget otomatik trading botunu Ubuntu 22.04 sunucusuna kurmanız için gereken tüm adımları içerir.
+Bu rehber, Upbit-Bitget otomatik trading botunu Ubuntu 22.04 sunucusuna **ROOT kullanıcısı** olarak kurmanız için gereken tüm adımları içerir.
 
 ## 🎯 GitHub Repository Avantajları
 
@@ -93,7 +93,7 @@ Bu rehber, Upbit-Bitget otomatik trading botunu Ubuntu 22.04 sunucusuna kurmanı
 
 ```bash
 # Git'i yükle (eğer yüklü değilse)
-sudo apt install git -y
+apt install git -y
 ```
 
 ### 2. Projeyi Klonlama
@@ -106,7 +106,7 @@ git clone https://github.com/0xmtnslk/upbit-perp.git
 cd upbit-perp
 
 # Yetkileri ayarla
-sudo chown -R $USER:$USER .
+chown -R root:root .
 ```
 
 ### 3. Dosya Yapısını Kontrol Etme
@@ -133,7 +133,7 @@ ls -la
 ### 1. Sistem Güncellemesi
 
 ```bash
-sudo apt update && sudo apt upgrade -y
+apt update && apt upgrade -y
 ```
 
 ### 2. Go Kurulumu
@@ -155,7 +155,7 @@ go version  # go version go1.21.5 linux/amd64 çıkması gerekli
 ### 3. Python Bağımlılıkları
 
 ```bash
-sudo apt install python3 python3-pip -y
+apt install python3 python3-pip -y
 pip3 install python-telegram-bot requests schedule telegram telethon
 ```
 
@@ -344,7 +344,7 @@ Dosyayı kaydet ve bot loglarında otomatik işlem açılıp açılmadığını 
 #### Go Monitor Servisi:
 
 ```bash
-sudo nano /etc/systemd/system/upbit-monitor.service
+nano /etc/systemd/system/upbit-monitor.service
 ```
 
 ```ini
@@ -355,8 +355,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=$USER
-WorkingDirectory=/home/$USER/upbit-perp
+User=root
+WorkingDirectory=/root/upbit-perp
 Environment=TELEGRAM_API_ID=12345678
 Environment=TELEGRAM_API_HASH=abc123def456ghi789
 ExecStart=/usr/local/go/bin/go run main.go
@@ -371,13 +371,13 @@ WantedBy=multi-user.target
 ```
 
 **⚠️ ÖNEMLİ:** 
-- `$USER` kısmını kendi kullanıcı adınla değiştir (örnek: `ubuntu`)
+- Root kullanıcısı olarak ayarlandı ✅
 - `TELEGRAM_API_ID` ve `TELEGRAM_API_HASH`'i gerçek değerlerinle değiştir
 
 #### Telegram Bot Servisi:
 
 ```bash
-sudo nano /etc/systemd/system/upbit-bot.service  
+nano /etc/systemd/system/upbit-bot.service  
 ```
 
 ```ini
@@ -388,8 +388,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=$USER
-WorkingDirectory=/home/$USER/upbit-perp
+User=root
+WorkingDirectory=/root/upbit-perp
 Environment=TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrSTUvwxYZ
 Environment=BOT_ENCRYPTION_KEY=oH6YUVxMEZlcNb9zJw8gFp3yPtW7aX5uRm2vK0qH4L8=
 ExecStart=/usr/local/go/bin/go run bot_main.go bitget.go
@@ -404,7 +404,7 @@ WantedBy=multi-user.target
 ```
 
 **⚠️ ÖNEMLİ:** 
-- `$USER` kısmını kendi kullanıcı adınla değiştir (örnek: `ubuntu`)
+- Root kullanıcısı olarak ayarlandı ✅
 - `TELEGRAM_BOT_TOKEN` ve `BOT_ENCRYPTION_KEY`'i gerçek değerlerinle değiştir
 
 ### 2. Servisleri Etkinleştirme
@@ -413,24 +413,24 @@ WantedBy=multi-user.target
 
 ```bash
 # Systemd'yi reload et
-sudo systemctl daemon-reload
+systemctl daemon-reload
 
 # Servisleri etkinleştir (boot'ta başlaması için)
-sudo systemctl enable upbit-monitor
-sudo systemctl enable upbit-bot
+systemctl enable upbit-monitor
+systemctl enable upbit-bot
 
 # ÖNCE Monitor'u başlat
-sudo systemctl start upbit-monitor  
+systemctl start upbit-monitor  
 
 # Monitor'un başladığını kontrol et
-sudo systemctl status upbit-monitor
+systemctl status upbit-monitor
 
 # Monitor çalışıyorsa Bot'u başlat  
-sudo systemctl start upbit-bot
+systemctl start upbit-bot
 
 # Her iki servisin durumunu kontrol et
-sudo systemctl status upbit-monitor
-sudo systemctl status upbit-bot
+systemctl status upbit-monitor
+systemctl status upbit-bot
 ```
 
 ### 3. Session Sorun Giderme
@@ -439,31 +439,31 @@ Eğer servis "authentication failed" hatası verirse:
 
 ```bash
 # Servisi durdur
-sudo systemctl stop upbit-monitor
+systemctl stop upbit-monitor
 
 # Manuel olarak tekrar çalıştırıp session'ı yenile
-cd ~/upbit-perp
+cd /root/upbit-perp
 source load_env.sh
 go run main.go
 # Telefon numarası + SMS kodu + (varsa) şifre gir
 # Ctrl+C ile durdur
 
 # Servisi tekrar başlat
-sudo systemctl start upbit-monitor
-sudo systemctl status upbit-monitor
+systemctl start upbit-monitor
+systemctl status upbit-monitor
 ```
 
 ### 3. Logları İzleme
 
 ```bash
 # Monitor logları
-sudo journalctl -f -u upbit-monitor
+journalctl -f -u upbit-monitor
 
 # Bot logları  
-sudo journalctl -f -u upbit-bot
+journalctl -f -u upbit-bot
 
 # Her iki servisi birlikte izle
-sudo journalctl -f -u upbit-monitor -u upbit-bot
+journalctl -f -u upbit-monitor -u upbit-bot
 ```
 
 ---
@@ -477,21 +477,21 @@ sudo journalctl -f -u upbit-monitor -u upbit-bot
 tail -f /var/log/syslog | grep upbit
 
 # Servis logları
-sudo journalctl -f -u upbit-monitor
-sudo journalctl -f -u upbit-bot
+journalctl -f -u upbit-monitor
+journalctl -f -u upbit-bot
 ```
 
 ### Yaygın Sorunlar
 
 #### 1. "Permission Denied" Hatası
 ```bash
-sudo chown -R $USER:$USER ~/upbit-perp
-chmod +x ~/upbit-perp/*.sh
+sudo chown -R root:root /root/upbit-perp
+chmod +x /root/upbit-perp/*.sh
 ```
 
 #### 2. "Module Not Found" Hatası  
 ```bash
-cd ~/upbit-perp
+cd /root/upbit-perp
 go mod tidy
 go mod download
 ```
@@ -503,8 +503,8 @@ go mod download
 #### 4. Session Authentication Hatası
 ```bash
 # Session dosyasını sil ve yeniden oluştur
-rm -rf ~/upbit-perp/sessions/*
-cd ~/upbit-perp
+rm -rf /root/upbit-perp/sessions/*
+cd /root/upbit-perp
 source load_env.sh
 go run main.go
 # Telefon + SMS kodu + şifre gir
@@ -521,15 +521,15 @@ go run main.go
 sudo systemctl stop upbit-bot upbit-monitor
 
 # Servisleri başlat
-sudo systemctl start upbit-monitor
+systemctl start upbit-monitor
 sleep 5  # Monitor'un başlamasını bekle
-sudo systemctl start upbit-bot
+systemctl start upbit-bot
 ```
 
 ### Manuel Debug
 
 ```bash
-cd ~/upbit-perp
+cd /root/upbit-perp
 source load_env.sh
 
 # Debug modunda çalıştır
@@ -564,10 +564,10 @@ BOT_ENCRYPTION_KEY="$BOT_ENCRYPTION_KEY" go run bot_main.go bitget.go  # Termina
 ### Günlük Kontroller:
 ```bash
 # Servis durumları
-sudo systemctl status upbit-monitor upbit-bot
+systemctl status upbit-monitor upbit-bot
 
 # Disk kullanımı
-df -h ~/upbit-perp
+df -h /root/upbit-perp
 
 # Log boyutları  
 sudo du -sh /var/log/journal/
@@ -576,10 +576,10 @@ sudo du -sh /var/log/journal/
 ### Haftalık Bakım:
 ```bash
 # Sistem güncellemesi
-sudo apt update && sudo apt upgrade -y
+apt update && apt upgrade -y
 
 # GitHub'dan son güncellemeleri çek
-cd ~/upbit-perp
+cd /root/upbit-perp
 git pull origin main
 
 # Go bağımlılık güncellemesi
@@ -587,16 +587,16 @@ go get -u ./...
 go mod tidy
 
 # Servisleri yeniden başlat
-sudo systemctl restart upbit-monitor upbit-bot
+systemctl restart upbit-monitor upbit-bot
 ```
 
 ### Backup:
 ```bash
 # Veri dosyalarını yedekle
-mkdir -p ~/backup
-cp ~/upbit-perp/*.json ~/backup/
-cp ~/upbit-perp/.env ~/backup/
-cp ~/upbit-perp/sessions/* ~/backup/ 2>/dev/null || true
+mkdir -p /root/backup
+cp /root/upbit-perp/*.json /root/backup/
+cp /root/upbit-perp/.env /root/backup/
+cp /root/upbit-perp/sessions/* /root/backup/ 2>/dev/null || true
 ```
 
 ---
@@ -622,9 +622,9 @@ Artık sisteminiz Ubuntu 22.04 sunucusunda çalışıyor:
 ### 🔄 Gelecekteki Güncellemeler:
 ```bash
 # Son güncellemeleri almak için
-cd ~/upbit-perp  
+cd /root/upbit-perp  
 git pull origin main
-sudo systemctl restart upbit-monitor upbit-bot
+systemctl restart upbit-monitor upbit-bot
 ```
 
 ### 🍴 Repository'yi Fork Etme:
