@@ -357,6 +357,8 @@ func (tb *TelegramBot) getAllActiveUsers() []*UserData {
 
 // Start file watcher for upbit_new.json to trigger auto-trading
 func (tb *TelegramBot) startFileWatcher() {
+        log.Printf("🔧 Starting file watcher...")
+        
         watcher, err := fsnotify.NewWatcher()
         if err != nil {
                 log.Printf("❌ Failed to create file watcher: %v", err)
@@ -364,15 +366,22 @@ func (tb *TelegramBot) startFileWatcher() {
         }
         defer watcher.Close()
 
-        // Watch upbit_new.json file
+        // Watch upbit_new.json file - use absolute path for reliability
         upbitFile := "upbit_new.json"
+        
+        // Check if file exists first
+        if _, err := os.Stat(upbitFile); os.IsNotExist(err) {
+                log.Printf("❌ File %s does not exist!", upbitFile)
+                return
+        }
+        
         err = watcher.Add(upbitFile)
         if err != nil {
                 log.Printf("❌ Failed to watch %s: %v", upbitFile, err)
                 return
         }
 
-        log.Printf("👁️  Started watching %s for new UPBIT listings...", upbitFile)
+        log.Printf("👁️  Successfully watching %s for new UPBIT listings...", upbitFile)
 
         // Initialize with current latest symbol to prevent triggering on startup
         if latestSymbol := tb.getLatestDetectedSymbol(); latestSymbol != "" {
@@ -380,18 +389,25 @@ func (tb *TelegramBot) startFileWatcher() {
                 log.Printf("🔄 Current latest symbol: %s", latestSymbol)
         }
 
+        log.Printf("🔄 File watcher ready - waiting for events...")
+        
         for {
                 select {
                 case event, ok := <-watcher.Events:
                         if !ok {
+                                log.Printf("❌ File watcher events channel closed")
                                 return
                         }
-                        if event.Op&fsnotify.Write == fsnotify.Write {
-                                log.Printf("📝 Detected file change: %s", event.Name)
+                        log.Printf("📝 File event detected: %s (Op: %v)", event.Name, event.Op)
+                        if event.Op&fsnotify.Write == fsnotify.Write || event.Op&fsnotify.Chmod == fsnotify.Chmod {
+                                log.Printf("🚨 FILE CHANGE EVENT - Processing file change: %s", event.Name)
                                 tb.processUpbitFile()
+                        } else {
+                                log.Printf("📋 Event ignored: %v", event.Op)
                         }
                 case err, ok := <-watcher.Errors:
                         if !ok {
+                                log.Printf("❌ File watcher error channel closed")
                                 return
                         }
                         log.Printf("❌ File watcher error: %v", err)
