@@ -912,7 +912,8 @@ func (tb *TelegramBot) handleBalanceQuery(chatID int64, userID int64) {
                 balanceText += "✅ Henüz bakiye bilgisi yok"
         } else {
                 for _, balance := range balances {
-                        balanceText += fmt.Sprintf("💰 **%s**: %.4f USDT\n", balance.MarginCoin, balance.Available)
+                        availableFloat, _ := strconv.ParseFloat(balance.Available, 64)
+                balanceText += fmt.Sprintf("💰 **%s**: %.2f USDT\n", balance.MarginCoin, availableFloat)
                 }
         }
 
