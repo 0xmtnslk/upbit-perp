@@ -172,20 +172,31 @@ class TelegramUpbitMonitor:
         text = message.text.upper()
         logger.debug(f"Processing message: {message.text[:100]}...")
         
-        # Check if message contains UPBIT LISTING
-        if 'UPBIT LISTING' in text:
+        # Enhanced filtering to ensure only UPBIT listings (not BITHUMB)
+        is_upbit_listing = ('UPBIT LISTING' in text or 'UPBIT LİSTELEME' in text)
+        is_bithumb_related = ('BITHUMB' in text or 'BİTHUMB' in text)
+        
+        # Only process if it's a UPBIT listing and NOT related to Bithumb
+        if is_upbit_listing and not is_bithumb_related:
             logger.info(f"Found UPBIT LISTING message: {message.text}")
             
             # Extract symbols from parentheses
             symbols = self.extract_crypto_symbols(message.text)
             
-            for symbol in symbols:
-                if symbol not in self.detected_symbols:
-                    logger.info(f"New symbol detected: {symbol}")
-                    self.detected_symbols.add(symbol)
-                    self.save_to_json(symbol)
-                else:
-                    logger.info(f"Symbol {symbol} already detected, skipping")
+            if symbols:  # Only process if we actually found symbols
+                for symbol in symbols:
+                    if symbol not in self.detected_symbols:
+                        logger.info(f"New UPBIT symbol detected: {symbol}")
+                        self.detected_symbols.add(symbol)
+                        self.save_to_json(symbol)
+                    else:
+                        logger.info(f"UPBIT symbol {symbol} already detected, skipping")
+            else:
+                logger.debug("No cryptocurrency symbols found in parentheses")
+        elif is_bithumb_related:
+            logger.debug(f"Skipping BITHUMB-related message: {message.text[:100]}...")
+        elif 'LISTING' in text and not is_upbit_listing:
+            logger.debug(f"Skipping non-UPBIT listing message: {message.text[:100]}...")
 
     async def monitor_once(self):
         """Single monitoring cycle"""
