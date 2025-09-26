@@ -629,32 +629,32 @@ func (tb *TelegramBot) handleSettings(chatID int64, userID int64) {
                 keyPreview = strings.Repeat("*", len(user.BitgetAPIKey)) + "..."
         }
 
-        // Professional settings summary with safe formatting
-        settingsMsg := fmt.Sprintf(`⚙️ *Trading Ayarlarınız*
+        // Plain text settings summary - no markdown issues
+        settingsMsg := fmt.Sprintf(`⚙️ TRADING AYARLARINIZ
 
-👤 *Hesap Bilgileri:*
-• Kullanıcı: @%s (ID: %d)
+👤 HESAP BİLGİLERİ:
+• Kullanıcı: @%s (ID: %d) 
 • Durum: %s
 
-💰 *Trade Parametreleri:*
+💰 TRADE PARAMETRELERİ:
 • Margin Miktarı: %.2f USDT
-• Leverage Oranı: %dx
+• Leverage Oranı: %dx  
 • Risk Seviyesi: %s
 
-🔐 *API Konfigürasyonu:*
+🔐 API KONFIGÜRASYONU:
 • API Key: %s
-• Bağlantı Durumu: ✅ Aktif
-• Son Güncelleme: Bitget v2 API
+• Bağlantı Durumu: Aktif
+• API Versiyonu: Bitget v2
 
-🚀 *Auto-Trading:*
-• UPBIT Listening: 🟢 Aktif
+🚀 AUTO-TRADING:
+• UPBIT Monitoring: Aktif
 • Otomatik İşlem: %s
 • Pozisyon Yönetimi: Otomatik
 
-💡 *Hızlı İşlemler:*
-🔧 Setup değiştirmek için: /setup
-📊 Bakiye görmek için: /start menüsü
-📈 Pozisyonlar için: /start menüsü`,
+💡 HIZLI İŞLEMLER:
+🔧 Setup değiştir: /setup
+📊 Bakiye gör: Ana menüden
+📈 Pozisyonlar: Ana menüden`,
                 user.Username,
                 user.UserID,
                 map[bool]string{true: "🟢 Aktif", false: "🔴 Pasif"}[user.IsActive],
@@ -664,9 +664,9 @@ func (tb *TelegramBot) handleSettings(chatID int64, userID int64) {
                 keyPreview,
                 map[bool]string{true: "🟢 Aktif", false: "🔴 Pasif"}[user.IsActive])
 
-        log.Printf("📤 Creating settings message for chat %d", chatID)
+        log.Printf("📤 Creating plain text settings message for chat %d", chatID)
         msg := tgbotapi.NewMessage(chatID, settingsMsg)
-        msg.ParseMode = "Markdown"
+        // NO MARKDOWN - plain text only
         msg.ReplyMarkup = tb.createMainMenu()
         
         log.Printf("📤 Sending settings message...")
