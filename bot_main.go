@@ -59,7 +59,12 @@ type BotDatabase struct {
 type UpbitDetection struct {
         Symbol      string `json:"symbol"`
         Timestamp   string `json:"timestamp"`
-        HumanTime   string `json:"human_time"`
+        DetectedAt  string `json:"detected_at"`
+}
+
+// UpbitData represents the wrapper structure for upbit_new.json
+type UpbitData struct {
+        Listings []UpbitDetection `json:"listings"`
 }
 
 // TelegramBot represents our multi-user bot
@@ -402,18 +407,18 @@ func (tb *TelegramBot) getLatestDetectedSymbol() string {
                 return ""
         }
 
-        var detections []UpbitDetection
-        if err := json.Unmarshal(data, &detections); err != nil {
+        var upbitData UpbitData
+        if err := json.Unmarshal(data, &upbitData); err != nil {
                 log.Printf("Warning: Could not parse upbit_new.json: %v", err)
                 return ""
         }
 
-        if len(detections) == 0 {
+        if len(upbitData.Listings) == 0 {
                 return ""
         }
 
-        // Return the latest (last) detection symbol
-        return detections[len(detections)-1].Symbol
+        // Return the latest (first) detection symbol - Go monitor inserts new listings at index 0
+        return upbitData.Listings[0].Symbol
 }
 
 // Process upbit_new.json changes and trigger auto-trading
