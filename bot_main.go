@@ -1311,30 +1311,82 @@ func (tb *TelegramBot) sendPositionReminder(position *PositionInfo) {
         }
         
         api := NewBitgetAPI(user.BitgetAPIKey, user.BitgetSecret, user.BitgetPasskey)
-        currentPrice, err := api.GetSymbolPrice(position.Symbol)
+        
+        // Get REAL position data from Bitget (accurate P&L like position display)
+        positions, err := api.GetAllPositions()
+        var realPnL float64 = 0
+        var currentPrice float64 = position.OpenPrice
+        
         if err != nil {
-                log.Printf("⚠️ Could not get current price for reminder: %v", err)
-                currentPrice = position.OpenPrice // Fallback
+                log.Printf("⚠️ Could not get positions for reminder: %v", err)
+                // Fallback to price lookup only
+                currentPrice, _ = api.GetSymbolPrice(position.Symbol)
+        } else {
+                // Log all available positions for debugging
+                log.Printf("🔍 Available positions from Bitget API:")
+                for _, pos := range positions {
+                        if pos.Size != "0" {
+                                log.Printf("   📊 %s - Size: %s - PnL: %s", pos.Symbol, pos.Size, pos.UnrealizedPL)
+                        }
+                }
+                
+                // Find the specific position with flexible symbol matching
+                var foundPosition *BitgetPosition
+                for _, pos := range positions {
+                        if pos.Size != "0" {
+                                // Exact match first
+                                if pos.Symbol == position.Symbol {
+                                        foundPosition = &pos
+                                        break
+                                }
+                                // Flexible matching: check if stored symbol is contained in API symbol
+                                if strings.Contains(pos.Symbol, position.Symbol) {
+                                        foundPosition = &pos
+                                        log.Printf("🔄 Flexible match: %s contains %s", pos.Symbol, position.Symbol)
+                                }
+                                // Also check the reverse
+                                if strings.Contains(position.Symbol, pos.Symbol) {
+                                        foundPosition = &pos
+                                        log.Printf("🔄 Reverse match: %s contains %s", position.Symbol, pos.Symbol)
+                                }
+                        }
+                }
+                
+                if foundPosition != nil {
+                        if pnlFloat, err := strconv.ParseFloat(foundPosition.UnrealizedPL, 64); err == nil {
+                                realPnL = pnlFloat
+                                log.Printf("🎯 Using REAL P&L for %s (matched %s): %.5f USDT", position.Symbol, foundPosition.Symbol, realPnL)
+                        }
+                        if priceFloat, err := strconv.ParseFloat(foundPosition.MarkPrice, 64); err == nil {
+                                currentPrice = priceFloat
+                        }
+                } else {
+                        log.Printf("⚠️ No matching position found for %s in API response - using fallback calculation", position.Symbol)
+                        // Fallback to manual calculation but WITHOUT leverage multiplication
+                        currentPrice, _ = api.GetSymbolPrice(position.Symbol)
+                        priceChange := currentPrice - position.OpenPrice
+                        realPnL = priceChange * position.Size  // No leverage multiplication!
+                        log.Printf("📊 Fallback P&L calculation: (%.4f - %.4f) * %.4f = %.5f USDT", 
+                                currentPrice, position.OpenPrice, position.Size, realPnL)
+                }
         }
         
         // Calculate duration
         duration := time.Since(position.OpenTime)
         
-        // Calculate P&L
+        // Calculate price change for display
         priceChange := currentPrice - position.OpenPrice
         priceChangePercent := (priceChange / position.OpenPrice) * 100
-        usdPnL := priceChange * position.Size
-        usdPnLWithLeverage := usdPnL * float64(position.Leverage)
         
-        // Format P&L colors and icons
+        // Format P&L colors and icons (using REAL P&L from exchange)
         pnlIcon := "🔴"
         pnlColor := "📉"
         statusEmoji := "⚠️"
-        if usdPnLWithLeverage > 0 {
+        if realPnL > 0 {
                 pnlIcon = "🟢"
                 pnlColor = "📈" 
                 statusEmoji = "✅"
-        } else if usdPnLWithLeverage == 0 {
+        } else if realPnL == 0 {
                 pnlIcon = "⚪"
                 pnlColor = "➡️"
                 statusEmoji = "⏸️"
@@ -1363,7 +1415,7 @@ Pozisyonunuzu istediğiniz zaman kapatabilirsiniz:`,
                 priceChange,
                 priceChangePercent,
                 pnlIcon,
-                usdPnLWithLeverage)
+                realPnL)
         
         // Create close position button
         closeButton := tgbotapi.NewInlineKeyboardMarkup(
@@ -1455,8 +1507,7 @@ func StartTradingBot() {
         bot.Start()
 }
 
-// Main entry point  
+// Main entry point
 func main() {
         StartTradingBot()
 }
-
