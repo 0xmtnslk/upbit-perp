@@ -573,21 +573,39 @@ df -h /root/upbit-perp
 sudo du -sh /var/log/journal/
 ```
 
-### Haftalık Bakım:
-```bash
-# Sistem güncellemesi
-apt update && apt upgrade -y
+### 📅 Haftalık Bakım:
 
-# GitHub'dan son güncellemeleri çek
+#### 1. Sistem Güncellemesi
+```bash
+apt update && apt upgrade -y
+```
+
+#### 2. Bot Güncellemesi
+```bash
+# Servisleri durdur
+systemctl stop upbit-bot upbit-monitor
+
+# GitHub'dan güncellemeleri çek
 cd /root/upbit-perp
 git pull origin main
 
-# Go bağımlılık güncellemesi
+# Dependencies güncelle
 go get -u ./...
 go mod tidy
 
-# Servisleri yeniden başlat
-systemctl restart upbit-monitor upbit-bot
+# Servisleri başlat
+systemctl start upbit-monitor
+sleep 5
+systemctl start upbit-bot
+```
+
+#### 3. Log Kontrolü
+```bash
+# Çalışır durumda mı kontrol et
+systemctl status upbit-monitor upbit-bot
+
+# Son 50 log satırını gör
+journalctl -u upbit-bot -n 50 --no-pager
 ```
 
 ### Backup:
@@ -619,12 +637,36 @@ Artık sisteminiz Ubuntu 22.04 sunucusunda çalışıyor:
 
 **Kaynak Kod:** https://github.com/0xmtnslk/upbit-perp
 
-### 🔄 Gelecekteki Güncellemeler:
+### 🔄 Sistem Güncellemesi (GitHub'dan):
+
+#### 1. Servisleri Durdur
 ```bash
-# Son güncellemeleri almak için
-cd /root/upbit-perp  
+systemctl stop upbit-bot upbit-monitor
+```
+
+#### 2. GitHub'dan Güncellemeleri Çek
+```bash
+cd /root/upbit-perp
 git pull origin main
-systemctl restart upbit-monitor upbit-bot
+```
+
+#### 3. Dependency'leri Güncelle (Eğer Gerekirse)
+```bash
+go mod tidy
+go mod download
+```
+
+#### 4. Servisleri Yeniden Başlat
+```bash
+systemctl start upbit-monitor
+sleep 5  # Monitor'un başlamasını bekle
+systemctl start upbit-bot
+```
+
+#### 5. Durumu Kontrol Et
+```bash
+systemctl status upbit-monitor upbit-bot
+journalctl -f -u upbit-bot --no-pager
 ```
 
 ### 🍴 Repository'yi Fork Etme:
@@ -639,5 +681,32 @@ GitHub'da repo'yu fork ederek kendi değişikliklerini yapabilir ve kendi versiy
 ✅ **GitHub Entegrasyonu:** Kolay kurulum ve güncelleme sistemi  
 ✅ **Persistent Storage:** Bot restart → pozisyonlar korunur  
 ✅ **Multi-User Support:** Sınırsız kullanıcı desteği
+
+---
+
+## 🔧 Önemli Güncelleme İpuçları
+
+### ⚠️ Güncelleme Öncesi Kontrol:
+```bash
+# Aktif pozisyon var mı kontrol et
+cat /root/upbit-perp/active_positions.json
+
+# Kullanıcı sayısını kontrol et  
+grep -o "user_id" /root/upbit-perp/bot_users.json | wc -l
+```
+
+### 🚨 Acil Güncelleme (Critical Bug Fix):
+```bash
+# Hızlı güncelleme
+cd /root/upbit-perp && git pull origin main && systemctl restart upbit-monitor upbit-bot
+
+# Log'ları takip et
+journalctl -f -u upbit-bot
+```
+
+### 📊 Güncelleme Sonrası Test:
+1. Bot'a `/balance` komutunu gönder
+2. Bir test pozisyonu aç/kapat  
+3. Hatırlatma mesajları geldi mi kontrol et
 
 Sistemi paylaşarak birden fazla kişinin kullanmasını sağlayabilirsin! 🚀
