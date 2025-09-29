@@ -12,8 +12,18 @@ import (
         "net/url"
         "strconv"
         "strings"
+        "sync"
         "time"
 )
+
+// BalanceCache provides fast balance checking with background updates
+type BalanceCache struct {
+        Available  float64
+        LastUpdate time.Time
+        IsStale    bool
+        mutex      sync.RWMutex
+        api        *BitgetAPI
+}
 
 // BitgetAPI handles Bitget USDT-M Futures API operations
 type BitgetAPI struct {
@@ -22,6 +32,7 @@ type BitgetAPI struct {
         Passphrase string
         BaseURL    string
         Client     *http.Client
+        Cache      *BalanceCache
 }
 
 // OrderSide represents order side
@@ -112,9 +123,9 @@ type AccountBalance struct {
         BonusAmount       string `json:"bonusAmount"`
 }
 
-// NewBitgetAPI creates a new Bitget API client
+// NewBitgetAPI creates a new Bitget API client with balance cache
 func NewBitgetAPI(apiKey, apiSecret, passphrase string) *BitgetAPI {
-        return &BitgetAPI{
+        api := &BitgetAPI{
                 APIKey:     apiKey,
                 APISecret:  apiSecret,
                 Passphrase: passphrase,
@@ -123,6 +134,19 @@ func NewBitgetAPI(apiKey, apiSecret, passphrase string) *BitgetAPI {
                         Timeout: 30 * time.Second,
                 },
         }
+        
+        // Initialize balance cache
+        api.Cache = &BalanceCache{
+                Available:  0,
+                LastUpdate: time.Time{},
+                IsStale:    true,
+                api:        api,
+        }
+        
+        // Start background balance updates
+        go api.Cache.StartBalanceUpdates()
+        
+        return api
 }
 
 // PlaceOrder places a futures market order using official v2 API
@@ -154,41 +178,74 @@ func (b *BitgetAPI) PlaceOrder(symbol string, side OrderSide, size float64, trad
         return &orderResp, nil
 }
 
-// OpenLongPosition opens a long position like Python version
+// OpenLongPosition opens a long position with proper balance validation and margin calculation
 func (b *BitgetAPI) OpenLongPosition(symbol string, marginUSDT float64, leverage int) (*OrderResponse, error) {
-        // First set leverage
+        fmt.Printf("🚀 Starting position: symbol=%s, user_margin=%.2f USDT, requested_leverage=%dx\n", 
+                symbol, marginUSDT, leverage)
+        
+        // 1. BALANCE VALIDATION - Fast cache check
+        sufficient, err := b.Cache.HasSufficientBalance(marginUSDT)
+        if err != nil {
+                return nil, fmt.Errorf("balance check failed: %w", err)
+        }
+        if !sufficient {
+                return nil, fmt.Errorf("insufficient balance: %.2f USDT required, check your account", marginUSDT)
+        }
+        
+        // 2. SET LEVERAGE 
+        fmt.Printf("⚡ Setting leverage %dx for %s\n", leverage, symbol)
         if err := b.SetLeverage(symbol, leverage); err != nil {
                 return nil, fmt.Errorf("failed to set leverage: %w", err)
         }
         
-        // Get current price to calculate proper size
+        // 2.1 VERIFY LEVERAGE WAS SET CORRECTLY
+        actualLeverage, err := b.GetCurrentLeverage(symbol)
+        if err != nil {
+                fmt.Printf("⚠️ Could not verify leverage setting: %v\n", err)
+                // Don't fail, continue with user's requested leverage
+                actualLeverage = leverage
+        } else if actualLeverage != leverage {
+                fmt.Printf("⚠️ LEVERAGE MISMATCH: Requested=%dx, Actual=%dx (Bitget adjusted due to balance/risk)\n", 
+                        leverage, actualLeverage)
+                // Use actual leverage for calculations
+                leverage = actualLeverage
+        } else {
+                fmt.Printf("✅ Leverage verified: %dx set successfully\n", leverage)
+        }
+        
+        // 3. GET CURRENT PRICE
         currentPrice, err := b.GetSymbolPrice(symbol)
         if err != nil {
                 return nil, fmt.Errorf("failed to get current price: %w", err)
         }
         
-        // Python logic: For USDT-M futures, calculate size based on margin and leverage
-        // Total position value = marginUSDT * leverage
-        // Size in base currency = (marginUSDT * leverage) / currentPrice
-        totalPositionValue := marginUSDT * float64(leverage)
-        baseSize := totalPositionValue / currentPrice
+        // 4. FIXED CALCULATION: marginUSDT = position size (not margin * leverage)
+        // User says "50$ margin" = "50$ position size"
+        // Leverage only affects risk multiplier, not position size
+        positionSizeUSDT := marginUSDT
+        baseSize := positionSizeUSDT / currentPrice
         
-        fmt.Printf("📊 Opening long position: symbol=%s, margin=%.2f USDT, leverage=%dx, price=%.6f, total_value=%.2f, size=%.8f\n", 
-                symbol, marginUSDT, leverage, currentPrice, totalPositionValue, baseSize)
+        fmt.Printf("📊 Position calculation: user_input=%.2f USDT, position_size=%.2f USDT, price=%.6f, coin_amount=%.8f\n", 
+                marginUSDT, positionSizeUSDT, currentPrice, baseSize)
         
+        // 5. PLACE ORDER
+        fmt.Printf("🎯 Placing order: %.8f %s at market price\n", baseSize, symbol)
         orderResp, err := b.PlaceOrder(symbol, OrderSideBuy, baseSize, "open")
         if err != nil {
-                return nil, err
+                return nil, fmt.Errorf("order placement failed: %w", err)
         }
         
-        // Enrich order response with position tracking data
+        // 6. ENHANCE RESPONSE DATA
         if orderResp != nil {
                 orderResp.OpenPrice = currentPrice
                 orderResp.Symbol = symbol
                 orderResp.Size = baseSize
                 orderResp.MarginUSDT = marginUSDT
                 orderResp.Leverage = leverage
-                fmt.Printf("🏷️ Enhanced OrderResponse: OpenPrice=%.2f, Symbol=%s, Size=%.8f\n", currentPrice, symbol, baseSize)
+                
+                fmt.Printf("✅ Position opened successfully!\n")
+                fmt.Printf("🏷️ Details: Symbol=%s, Size=%.8f, OpenPrice=%.4f, Margin=%.2f, Leverage=%dx\n", 
+                        symbol, baseSize, currentPrice, marginUSDT, leverage)
         }
         
         return orderResp, nil
@@ -381,6 +438,42 @@ func (b *BitgetAPI) SetLeverage(symbol string, leverage int) error {
         return nil
 }
 
+// GetCurrentLeverage gets the current leverage setting for a symbol
+func (b *BitgetAPI) GetCurrentLeverage(symbol string) (int, error) {
+        endpoint := "/api/v2/mix/account/account"
+        params := map[string]string{
+                "symbol":      symbol,
+                "productType": "USDT-FUTURES",
+                "marginCoin":  "USDT",
+        }
+        
+        type LeverageResponse struct {
+                CrossLeverage string `json:"crossLeverage"`
+                LongLeverage  string `json:"longLeverage"`
+                ShortLeverage string `json:"shortLeverage"`
+        }
+        
+        var response LeverageResponse
+        err := b.makeRequestWithParams("GET", endpoint, params, nil, &response)
+        if err != nil {
+                return 0, fmt.Errorf("failed to get current leverage: %w", err)
+        }
+        
+        // For isolated margin, use long leverage
+        leverageStr := response.LongLeverage
+        if leverageStr == "" {
+                leverageStr = response.CrossLeverage
+        }
+        
+        leverage, err := strconv.Atoi(leverageStr)
+        if err != nil {
+                return 0, fmt.Errorf("failed to parse leverage %s: %w", leverageStr, err)
+        }
+        
+        fmt.Printf("🔍 Current leverage for %s: %dx\n", symbol, leverage)
+        return leverage, nil
+}
+
 // GetAccountBalance gets account balance using v2 API 
 func (b *BitgetAPI) GetAccountBalance() ([]AccountBalance, error) {
         fmt.Printf("🔍 Getting account balance from Bitget v2 API...\n")
@@ -403,6 +496,85 @@ func (b *BitgetAPI) GetAccountBalance() ([]AccountBalance, error) {
         
         fmt.Printf("✅ Balance response received: %+v\n", balances)
         return balances, nil
+}
+
+// Balance Cache Methods
+
+// StartBalanceUpdates starts background balance cache updates every 500ms
+func (bc *BalanceCache) StartBalanceUpdates() {
+        fmt.Printf("🔄 Starting balance cache updates every 500ms\n")
+        
+        ticker := time.NewTicker(500 * time.Millisecond)
+        go func() {
+                defer ticker.Stop()
+                for range ticker.C {
+                        if err := bc.RefreshBalance(); err != nil {
+                                fmt.Printf("⚠️ Balance cache update failed: %v\n", err)
+                                bc.mutex.Lock()
+                                bc.IsStale = true
+                                bc.mutex.Unlock()
+                        }
+                }
+        }()
+}
+
+// RefreshBalance updates the cached balance from API
+func (bc *BalanceCache) RefreshBalance() error {
+        balances, err := bc.api.GetAccountBalance()
+        if err != nil {
+                return fmt.Errorf("failed to get balance: %w", err)
+        }
+        
+        // Find USDT balance
+        var availableUSDT float64
+        for _, balance := range balances {
+                if balance.MarginCoin == "USDT" {
+                        if available, err := strconv.ParseFloat(balance.Available, 64); err == nil {
+                                availableUSDT = available
+                        }
+                        break
+                }
+        }
+        
+        bc.mutex.Lock()
+        bc.Available = availableUSDT
+        bc.LastUpdate = time.Now()
+        bc.IsStale = false
+        bc.mutex.Unlock()
+        
+        fmt.Printf("💰 Balance cache updated: %.2f USDT available\n", availableUSDT)
+        return nil
+}
+
+// HasSufficientBalance checks if cached balance is sufficient for trading
+func (bc *BalanceCache) HasSufficientBalance(requiredUSDT float64) (bool, error) {
+        bc.mutex.RLock()
+        defer bc.mutex.RUnlock()
+        
+        // If cache is stale (older than 2 seconds), force refresh
+        if bc.IsStale || time.Since(bc.LastUpdate) > 2*time.Second {
+                bc.mutex.RUnlock()
+                if err := bc.RefreshBalance(); err != nil {
+                        return false, fmt.Errorf("failed to refresh balance: %w", err)
+                }
+                bc.mutex.RLock()
+        }
+        
+        // Add 2% buffer for fees and leverage adjustments
+        requiredWithBuffer := requiredUSDT * 1.02
+        sufficient := bc.Available >= requiredWithBuffer
+        
+        fmt.Printf("💰 Balance check: %.2f available, %.2f required (with buffer), sufficient: %v\n", 
+                bc.Available, requiredWithBuffer, sufficient)
+        
+        return sufficient, nil
+}
+
+// GetCachedBalance returns the cached balance
+func (bc *BalanceCache) GetCachedBalance() (float64, time.Time, bool) {
+        bc.mutex.RLock()
+        defer bc.mutex.RUnlock()
+        return bc.Available, bc.LastUpdate, bc.IsStale
 }
 
 // GetSymbolPrice gets current symbol price using v2 API
