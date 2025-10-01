@@ -407,8 +407,8 @@ func (m *TelegramUpbitMonitor) Start() error {
                 log.Printf("🎯 Starting continuous monitoring of @%s for UPBIT LISTING messages", m.channelUsername)
                 log.Printf("💾 Output file: %s", m.jsonFile)
 
-                // Setup periodic checks
-                ticker := time.NewTicker(1 * time.Minute)
+                // Setup periodic checks every 5 seconds
+                ticker := time.NewTicker(5 * time.Second)
                 defer ticker.Stop()
 
                 go func() {
