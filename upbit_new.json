@@ -1,69 +1,34 @@
 {
   "listings": [
     {
-      "symbol": "LTC",
-      "timestamp": "2025-09-26T21:21:00Z", 
-      "detected_at": "2025-09-26 21:21:00 UTC"
+      "symbol": "SOMI",
+      "timestamp": "2025-10-01T04:27:06Z",
+      "detected_at": "2025-10-01 04:27:06 UTC"
     },
     {
-      "symbol": "DOGE",
-      "timestamp": "2025-09-26T21:08:00Z",
-      "detected_at": "2025-09-26 21:08:00 UTC"
+      "symbol": "FF",
+      "timestamp": "2025-09-29T09:35:34Z",
+      "detected_at": "2025-09-29 09:35:34 UTC"
     },
     {
-      "symbol": "SOL",
-      "timestamp": "2025-09-26T20:57:30Z",
-      "detected_at": "2025-09-26 20:57:30 UTC"
-    },
-    {
-      "symbol": "ADA",
-      "timestamp": "2025-09-26T20:49:00Z",
-      "detected_at": "2025-09-26 20:49:00 UTC"
-    },
-    {
-      "symbol": "ETH",
-      "timestamp": "2025-09-26T20:46:30Z",
-      "detected_at": "2025-09-26 20:46:30 UTC"
-    },
-    {
-      "symbol": "BTC",
-      "timestamp": "2025-09-26T20:38:45Z",
-      "detected_at": "2025-09-26 20:38:45 UTC"
-    },
-    {
-      "symbol": "AVAX",
-      "timestamp": "2025-09-26T20:36:30Z",
-      "detected_at": "2025-09-26 20:36:30 UTC"
-    },
-    {
-      "symbol": "LIVE-TEST",
-      "timestamp": "2025-09-26T20:35:45Z",
-      "detected_at": "2025-09-26 20:35:45 UTC"
-    },
-    {
-      "symbol": "DEMO",
-      "timestamp": "2025-09-26T20:30:00Z",
-      "detected_at": "2025-09-26 20:30:00 UTC"
-    },
-    {
-      "symbol": "TEST",
-      "timestamp": "2025-09-26T13:33:17Z",
-      "detected_at": "2025-09-26 13:33:17 UTC"
-    },
-    {
-      "symbol": "MIRA",
-      "timestamp": "2025-09-26T13:21:25.760886",
-      "detected_at": "2025-09-26 13:21:25 UTC"
-    },
-    {
-      "symbol": "XPL",
-      "timestamp": "2025-09-26T13:21:25.767338",
-      "detected_at": "2025-09-26 13:21:25 UTC"
+      "symbol": "SUPER",
+      "timestamp": "2025-09-29T08:54:34Z",
+      "detected_at": "2025-09-29 08:54:34 UTC"
     },
     {
       "symbol": "FLUID",
-      "timestamp": "2025-09-26T13:21:25.768844",
-      "detected_at": "2025-09-26 13:21:25 UTC"
+      "timestamp": "2025-09-27T08:07:15Z",
+      "detected_at": "2025-09-27 08:07:15 UTC"
+    },
+    {
+      "symbol": "XPL",
+      "timestamp": "2025-09-27T08:07:15Z",
+      "detected_at": "2025-09-27 08:07:15 UTC"
+    },
+    {
+      "symbol": "MIRA",
+      "timestamp": "2025-09-27T08:07:15Z",
+      "detected_at": "2025-09-27 08:07:15 UTC"
     }
   ]
 }
