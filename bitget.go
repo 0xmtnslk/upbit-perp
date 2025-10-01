@@ -518,54 +518,82 @@ func (bc *BalanceCache) StartBalanceUpdates() {
         }()
 }
 
-// RefreshBalance updates the cached balance from API
+// RefreshBalance updates the cached balance from API with timeout protection
 func (bc *BalanceCache) RefreshBalance() error {
-        balances, err := bc.api.GetAccountBalance()
-        if err != nil {
-                return fmt.Errorf("failed to get balance: %w", err)
+        // Create timeout channel
+        type result struct {
+                balances []AccountBalance
+                err      error
         }
         
-        // Find USDT balance
-        var availableUSDT float64
-        for _, balance := range balances {
-                if balance.MarginCoin == "USDT" {
-                        if available, err := strconv.ParseFloat(balance.Available, 64); err == nil {
-                                availableUSDT = available
-                        }
-                        break
+        resultChan := make(chan result, 1)
+        
+        // Run balance fetch with timeout
+        go func() {
+                balances, err := bc.api.GetAccountBalance()
+                resultChan <- result{balances, err}
+        }()
+        
+        // Wait for result or timeout
+        select {
+        case res := <-resultChan:
+                if res.err != nil {
+                        return fmt.Errorf("failed to get balance: %w", res.err)
                 }
+                
+                // Find USDT balance
+                var availableUSDT float64
+                for _, balance := range res.balances {
+                        if balance.MarginCoin == "USDT" {
+                                if available, err := strconv.ParseFloat(balance.Available, 64); err == nil {
+                                        availableUSDT = available
+                                }
+                                break
+                        }
+                }
+                
+                bc.mutex.Lock()
+                bc.Available = availableUSDT
+                bc.LastUpdate = time.Now()
+                bc.IsStale = false
+                bc.mutex.Unlock()
+                
+                fmt.Printf("💰 Balance cache updated: %.2f USDT available\n", availableUSDT)
+                return nil
+                
+        case <-time.After(10 * time.Second):
+                bc.mutex.Lock()
+                bc.IsStale = true
+                bc.mutex.Unlock()
+                return fmt.Errorf("balance fetch timeout after 10 seconds")
         }
-        
-        bc.mutex.Lock()
-        bc.Available = availableUSDT
-        bc.LastUpdate = time.Now()
-        bc.IsStale = false
-        bc.mutex.Unlock()
-        
-        fmt.Printf("💰 Balance cache updated: %.2f USDT available\n", availableUSDT)
-        return nil
 }
 
 // HasSufficientBalance checks if cached balance is sufficient for trading
 func (bc *BalanceCache) HasSufficientBalance(requiredUSDT float64) (bool, error) {
         bc.mutex.RLock()
-        defer bc.mutex.RUnlock()
+        isStale := bc.IsStale || time.Since(bc.LastUpdate) > 2*time.Second
+        available := bc.Available
+        bc.mutex.RUnlock()
         
         // If cache is stale (older than 2 seconds), force refresh
-        if bc.IsStale || time.Since(bc.LastUpdate) > 2*time.Second {
-                bc.mutex.RUnlock()
+        if isStale {
+                fmt.Printf("🔄 Cache stale, refreshing balance...\n")
                 if err := bc.RefreshBalance(); err != nil {
                         return false, fmt.Errorf("failed to refresh balance: %w", err)
                 }
+                // Re-read after refresh
                 bc.mutex.RLock()
+                available = bc.Available
+                bc.mutex.RUnlock()
         }
         
         // Add 2% buffer for fees and leverage adjustments
         requiredWithBuffer := requiredUSDT * 1.02
-        sufficient := bc.Available >= requiredWithBuffer
+        sufficient := available >= requiredWithBuffer
         
         fmt.Printf("💰 Balance check: %.2f available, %.2f required (with buffer), sufficient: %v\n", 
-                bc.Available, requiredWithBuffer, sufficient)
+                available, requiredWithBuffer, sufficient)
         
         return sufficient, nil
 }
