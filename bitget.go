@@ -219,14 +219,13 @@ func (b *BitgetAPI) OpenLongPosition(symbol string, marginUSDT float64, leverage
                 return nil, fmt.Errorf("failed to get current price: %w", err)
         }
         
-        // 4. FIXED CALCULATION: marginUSDT = position size (not margin * leverage)
-        // User says "50$ margin" = "50$ position size"
-        // Leverage only affects risk multiplier, not position size
-        positionSizeUSDT := marginUSDT
+        // 4. POSITION SIZE CALCULATION: margin × leverage = total position value
+        // Example: 20 USDT margin × 20x leverage = 400 USDT position
+        positionSizeUSDT := marginUSDT * float64(leverage)
         baseSize := positionSizeUSDT / currentPrice
         
-        fmt.Printf("📊 Position calculation: user_input=%.2f USDT, position_size=%.2f USDT, price=%.6f, coin_amount=%.8f\n", 
-                marginUSDT, positionSizeUSDT, currentPrice, baseSize)
+        fmt.Printf("📊 Position calculation: margin=%.2f USDT, leverage=%dx, position_size=%.2f USDT, price=%.6f, coin_amount=%.8f\n", 
+                marginUSDT, leverage, positionSizeUSDT, currentPrice, baseSize)
         
         // 5. PLACE ORDER
         fmt.Printf("🎯 Placing order: %.8f %s at market price\n", baseSize, symbol)

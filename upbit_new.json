@@ -1,6 +1,11 @@
 {
   "listings": [
     {
+      "symbol": "ETH",
+      "timestamp": "2025-10-01T07:20:00Z",
+      "detected_at": "2025-10-01 07:20:00 UTC"
+    },
+    {
       "symbol": "BTC",
       "timestamp": "2025-10-01T07:15:00Z",
       "detected_at": "2025-10-01 07:15:00 UTC"
@@ -9,31 +14,6 @@
       "symbol": "SOMI",
       "timestamp": "2025-10-01T04:27:06Z",
       "detected_at": "2025-10-01 04:27:06 UTC"
-    },
-    {
-      "symbol": "FF",
-      "timestamp": "2025-09-29T09:35:34Z",
-      "detected_at": "2025-09-29 09:35:34 UTC"
-    },
-    {
-      "symbol": "SUPER",
-      "timestamp": "2025-09-29T08:54:34Z",
-      "detected_at": "2025-09-29 08:54:34 UTC"
-    },
-    {
-      "symbol": "FLUID",
-      "timestamp": "2025-09-27T08:07:15Z",
-      "detected_at": "2025-09-27 08:07:15 UTC"
-    },
-    {
-      "symbol": "XPL",
-      "timestamp": "2025-09-27T08:07:15Z",
-      "detected_at": "2025-09-27 08:07:15 UTC"
-    },
-    {
-      "symbol": "MIRA",
-      "timestamp": "2025-09-27T08:07:15Z",
-      "detected_at": "2025-09-27 08:07:15 UTC"
     }
   ]
 }
