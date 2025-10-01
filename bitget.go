@@ -561,11 +561,11 @@ func (bc *BalanceCache) RefreshBalance() error {
                 fmt.Printf("💰 Balance cache updated: %.2f USDT available\n", availableUSDT)
                 return nil
                 
-        case <-time.After(10 * time.Second):
+        case <-time.After(3 * time.Second):
                 bc.mutex.Lock()
                 bc.IsStale = true
                 bc.mutex.Unlock()
-                return fmt.Errorf("balance fetch timeout after 10 seconds")
+                return fmt.Errorf("balance fetch timeout after 3 seconds")
         }
 }
 

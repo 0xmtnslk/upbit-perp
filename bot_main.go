@@ -522,12 +522,16 @@ func (tb *TelegramBot) executeAutoTrade(user *UserData, symbol string) {
         // Initialize Bitget API client
         bitgetAPI := NewBitgetAPI(user.BitgetAPIKey, user.BitgetSecret, user.BitgetPasskey)
         
-        // Pre-warm cache to avoid blocking on first trade
+        // Pre-warm cache with fast timeout (3 seconds max)
         log.Printf("🔄 Pre-warming balance cache for user %d...", user.UserID)
-        if err := bitgetAPI.Cache.RefreshBalance(); err != nil {
-                log.Printf("⚠️ Balance pre-warm failed for user %d: %v", user.UserID, err)
-                tb.sendMessage(user.UserID, fmt.Sprintf("⚠️ Auto-trade delayed for %s: Checking balance...", tradingSymbol))
-        }
+        go func() {
+                if err := bitgetAPI.Cache.RefreshBalance(); err != nil {
+                        log.Printf("⚠️ Balance pre-warm failed for user %d: %v (will check during order)", user.UserID, err)
+                }
+        }()
+        
+        // Small delay to let pre-warm complete if fast
+        time.Sleep(200 * time.Millisecond)
         
         // Send notification to user
         tb.sendMessage(user.UserID, fmt.Sprintf("🚀 Auto-trade triggered for %s\nMargin: %.2f USDT\nLeverage: %dx\nOpening long position...", tradingSymbol, user.MarginUSDT, user.Leverage))
