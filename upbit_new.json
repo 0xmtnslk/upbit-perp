@@ -1,6 +1,11 @@
 {
   "listings": [
     {
+      "symbol": "BTC",
+      "timestamp": "2025-10-01T07:15:00Z",
+      "detected_at": "2025-10-01 07:15:00 UTC"
+    },
+    {
       "symbol": "SOMI",
       "timestamp": "2025-10-01T04:27:06Z",
       "detected_at": "2025-10-01 04:27:06 UTC"
