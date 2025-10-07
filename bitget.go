@@ -8,7 +8,6 @@ import (
         "encoding/json"
         "fmt"
         "io"
-        "math"
         "net/http"
         "net/url"
         "strconv"
@@ -157,7 +156,7 @@ func (b *BitgetAPI) PlaceOrder(symbol string, side OrderSide, size float64, trad
                 ProductType: "USDT-FUTURES",   // USDT-M Futures
                 MarginMode:  "isolated",       // Isolated margin
                 MarginCoin:  "USDT",          // Margin coin (capitalized)
-                Size:        fmt.Sprintf("%.0f", size), // TAM SAYI - Bitget'in kontrat büyüklüğüne göre değiştirmesini engelle
+                Size:        fmt.Sprintf("%.8f", size),
                 Side:        side,            // buy or sell
                 TradeSide:   tradeSide,       // open or close
                 OrderType:   OrderTypeMarket, // market order
@@ -184,6 +183,10 @@ func (b *BitgetAPI) OpenLongPosition(symbol string, marginUSDT float64, leverage
         fmt.Printf("🚀 Starting position: symbol=%s, user_margin=%.2f USDT, requested_leverage=%dx\n", 
                 symbol, marginUSDT, leverage)
         
+        // Store ORIGINAL user settings to preserve them
+        originalMargin := marginUSDT
+        originalLeverage := leverage
+        
         // 1. BALANCE VALIDATION - Fast cache check
         sufficient, err := b.Cache.HasSufficientBalance(marginUSDT)
         if err != nil {
@@ -199,7 +202,7 @@ func (b *BitgetAPI) OpenLongPosition(symbol string, marginUSDT float64, leverage
                 return nil, fmt.Errorf("failed to set leverage: %w", err)
         }
         
-        // 2.1 VERIFY LEVERAGE WAS SET CORRECTLY
+        // 2.1 VERIFY LEVERAGE WAS SET CORRECTLY (for calculation only)
         actualLeverage, err := b.GetCurrentLeverage(symbol)
         if err != nil {
                 fmt.Printf("⚠️ Could not verify leverage setting: %v\n", err)
@@ -208,7 +211,7 @@ func (b *BitgetAPI) OpenLongPosition(symbol string, marginUSDT float64, leverage
         } else if actualLeverage != leverage {
                 fmt.Printf("⚠️ LEVERAGE MISMATCH: Requested=%dx, Actual=%dx (Bitget adjusted due to balance/risk)\n", 
                         leverage, actualLeverage)
-                // Use actual leverage for calculations
+                // Use actual leverage ONLY for position size calculation
                 leverage = actualLeverage
         } else {
                 fmt.Printf("✅ Leverage verified: %dx set successfully\n", leverage)
@@ -221,39 +224,31 @@ func (b *BitgetAPI) OpenLongPosition(symbol string, marginUSDT float64, leverage
         }
         
         // 4. POSITION SIZE CALCULATION: margin × leverage = total position value
-        // Example: 20 USDT margin × 20x leverage = 400 USDT position
+        // Use actualLeverage for calculation but store original values
         positionSizeUSDT := marginUSDT * float64(leverage)
         baseSize := positionSizeUSDT / currentPrice
         
-        // 5. TAM SAYIYA YUVARLAMA - Bitget'in kontrat büyüklüğüne göre değiştirmesini engelle
-        baseSizeInt := math.Round(baseSize)
+        fmt.Printf("📊 Position calculation: margin=%.2f USDT, leverage=%dx, position_size=%.2f USDT, price=%.6f, coin_amount=%.8f\n", 
+                marginUSDT, leverage, positionSizeUSDT, currentPrice, baseSize)
         
-        fmt.Printf("📊 Position calculation:\n")
-        fmt.Printf("   - User Margin: %.2f USDT\n", marginUSDT)
-        fmt.Printf("   - User Leverage: %dx\n", leverage)
-        fmt.Printf("   - Position Size: %.2f USDT\n", positionSizeUSDT)
-        fmt.Printf("   - Current Price: %.6f\n", currentPrice)
-        fmt.Printf("   - Calculated Size: %.8f\n", baseSize)
-        fmt.Printf("   - Rounded Size (TAM SAYI): %.0f ✅\n", baseSizeInt)
-        
-        // 6. PLACE ORDER - TAM SAYI olarak gönder
-        fmt.Printf("🎯 Placing order: %.0f %s at market price\n", baseSizeInt, symbol)
-        orderResp, err := b.PlaceOrder(symbol, OrderSideBuy, baseSizeInt, "open")
+        // 5. PLACE ORDER
+        fmt.Printf("🎯 Placing order: %.8f %s at market price\n", baseSize, symbol)
+        orderResp, err := b.PlaceOrder(symbol, OrderSideBuy, baseSize, "open")
         if err != nil {
                 return nil, fmt.Errorf("order placement failed: %w", err)
         }
         
-        // 7. ENHANCE RESPONSE DATA
+        // 6. ENHANCE RESPONSE DATA - Store ORIGINAL user settings (not Bitget's adjusted values)
         if orderResp != nil {
                 orderResp.OpenPrice = currentPrice
                 orderResp.Symbol = symbol
-                orderResp.Size = baseSizeInt
-                orderResp.MarginUSDT = marginUSDT
-                orderResp.Leverage = leverage
+                orderResp.Size = baseSize
+                orderResp.MarginUSDT = originalMargin    // ALWAYS use original user margin
+                orderResp.Leverage = originalLeverage    // ALWAYS use original user leverage
                 
                 fmt.Printf("✅ Position opened successfully!\n")
-                fmt.Printf("🏷️ Details: Symbol=%s, Size=%.0f, OpenPrice=%.4f, Margin=%.2f USDT, Leverage=%dx\n", 
-                        symbol, baseSizeInt, currentPrice, marginUSDT, leverage)
+                fmt.Printf("🏷️ Details: Symbol=%s, Size=%.8f, OpenPrice=%.4f, UserMargin=%.2f, UserLeverage=%dx (Actual=%dx)\n", 
+                        symbol, baseSize, currentPrice, originalMargin, originalLeverage, leverage)
         }
         
         return orderResp, nil
